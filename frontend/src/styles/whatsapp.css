@@ -1,0 +1,265 @@
+/* ==========================================
+   WHATSAPP DASHBOARD STYLES
+   ========================================== */
+
+/* 1. Layout & Container */
+.wa-dashboard {
+    background-color: #f9fafb;
+    /* Light gray background */
+    min-height: 100vh;
+    width: 100%;
+    position: relative;
+    font-family: inherit;
+}
+
+.wa-container {
+    padding: 2rem;
+    max-width: 80rem;
+    /* Equivalent to max-w-7xl */
+    margin: 0 auto;
+}
+
+/* 2. Header */
+.wa-header {
+    background-color: #ffffff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 1.25rem 2rem;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.wa-header-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+}
+
+/* 3. Buttons */
+
+.wa-btn-danger {
+    color: #ef4444;
+    background-color: #fef2f2;
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.375rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+    border: none;
+    cursor: pointer;
+}
+
+.wa-btn-danger:hover {
+    color: #b91c1c;
+    background-color: #fee2e2;
+}
+
+/* 4. Overview Cards */
+.wa-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+@media (min-width: 768px) {
+    .wa-cards-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1024px) {
+    .wa-cards-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+.wa-card {
+    padding: 1.5rem;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    border: 1px solid #e5e7eb;
+    background-color: #ffffff;
+}
+
+.wa-card-blue {
+    background-color: #eff6ff;
+    border-color: #dbeafe;
+}
+
+.wa-card-green {
+    background-color: #f0fdf4;
+    border-color: #dcfce3;
+}
+
+.wa-card-purple {
+    background-color: #faf5ff;
+    border-color: #f3e8ff;
+}
+
+.wa-card-label {
+    font-weight: 500;
+    font-size: 0.875rem;
+    margin: 0;
+}
+
+.wa-card-label-default {
+    color: #6b7280;
+}
+
+.wa-card-label-blue {
+    color: #2563eb;
+}
+
+.wa-card-label-green {
+    color: #16a34a;
+}
+
+.wa-card-label-purple {
+    color: #9333ea;
+}
+
+.wa-card-value {
+    font-size: 2.25rem;
+    font-weight: 700;
+    margin: 0.5rem 0 0 0;
+}
+
+.wa-card-value-default {
+    color: #1f2937;
+}
+
+.wa-card-value-blue {
+    color: #1e3a8a;
+}
+
+.wa-card-value-green {
+    color: #14532d;
+}
+
+.wa-card-value-purple {
+    color: #581c87;
+}
+
+/* 5. Leads Table */
+.wa-table-container {
+    background-color: #ffffff;
+    border-radius: 0.75rem;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+}
+
+.wa-table-scroll {
+    overflow-x: auto;
+}
+
+.wa-table {
+    width: 100%;
+    text-align: left;
+    border-collapse: collapse;
+}
+
+.wa-table thead {
+    background-color: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.wa-table th {
+    padding: 1rem 1.5rem;
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.wa-table tbody {
+    font-size: 0.875rem;
+}
+
+.wa-table tr {
+    border-bottom: 1px solid #e5e7eb;
+    transition: background-color 0.2s;
+}
+
+.wa-table tr:last-child {
+    border-bottom: none;
+}
+
+.wa-table-row-default {
+    background-color: #ffffff;
+}
+
+.wa-table-row-default:hover {
+    background-color: #f9fafb;
+}
+
+.wa-table-row-success {
+    background-color: rgba(240, 253, 244, 0.5);
+    /* Soft green */
+}
+
+.wa-table-row-success:hover {
+    background-color: #f0fdf4;
+}
+
+.wa-table td {
+    padding: 1rem 1.5rem;
+    white-space: nowrap;
+}
+
+.wa-text-primary {
+    color: #111827;
+    font-weight: 500;
+}
+
+.wa-text-secondary {
+    color: #6b7280;
+}
+
+.wa-text-center {
+    text-align: center;
+}
+
+.wa-text-right {
+    text-align: right;
+}
+
+/* 6. Status Badges */
+.wa-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    /* Fully rounded pill */
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.wa-badge-blue {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.wa-badge-gray {
+    background-color: #f3f4f6;
+    color: #1f2937;
+}
+
+.wa-badge-green {
+    background-color: #dcfce3;
+    color: #166534;
+}
+
+.wa-badge-red {
+    background-color: #fee2e2;
+    color: #991b1b;
+}

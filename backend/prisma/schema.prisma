@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model automation_logs {
+  id         Int      @id @default(autoincrement())
+  lead_id    Int?
+  email      String?
+  level      String?
+  action     String?
+  message    String?
+  source     String?
+  metadata   Json?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model lead_status {
+  id          Int       @id @default(autoincrement())
+  lead_id     Int?
+  email       String?
+  channel     String?
+  action      String?
+  status      String?
+  clicked     Boolean?  @default(false)
+  click_count Int?      @default(0)
+  metadata    Json?
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @db.Timestamptz(6)
+}
+
+model leads {
+  id              Int       @id @default(autoincrement())
+  full_name       String?
+  name            String?
+  email           String?   @unique
+  phone_number    String?
+  whatsapp_number String?
+  whatsapp_url    String?
+  facebook_url    String?
+  linkedin_url    String?
+  company         String?
+  company_name    String?
+  role            String?
+  occupation      String?
+  source          String?
+  status          String?
+  metadata        Json?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime? @db.Timestamptz(6)
+  country         String?
+}
