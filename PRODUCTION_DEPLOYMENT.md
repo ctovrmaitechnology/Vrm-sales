@@ -24,12 +24,13 @@ Required production environment:
 ```env
 PORT=5002
 NODE_ENV=production
-DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DB_NAME"
-UNIFIED_DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DB_NAME"
+DATABASE_URL="postgresql://postgres.rdxaymtpzvkgbeogntmo:[YOUR-PASSWORD]@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
+UNIFIED_DATABASE_URL="postgresql://postgres.rdxaymtpzvkgbeogntmo:[YOUR-PASSWORD]@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
 BACKEND_BASE_URL=https://api.your-domain.com
 FRONTEND_BASE_URL=https://your-domain.com
 POSTER_URL=https://drive.google.com/file/d/.../view?usp=drive_link
 BREVO_API_KEY=...
+ENABLE_FOLLOW_UP_CRON=false
 ENABLE_WHATSAPP=false
 ```
 
@@ -118,5 +119,6 @@ Before sending a campaign:
 
 - Do not deploy `.env` from a public repository.
 - Keep `ENABLE_WHATSAPP=false` if WhatsApp follow-ups should remain disabled.
+- Keep `ENABLE_FOLLOW_UP_CRON=false` if follow-up emails should run only from the Email dashboard button.
 - Restart backend after environment changes.
 - Old emails with direct Google Drive links cannot be tracked; send new emails after deployment.

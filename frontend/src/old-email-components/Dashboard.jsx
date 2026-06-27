@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import '../styles/whatsapp.css';
-import { Download, Send, Loader2 } from 'lucide-react';
+import { Download, Send, Loader2, RefreshCw } from 'lucide-react';
 import { useApp } from '../components/AppContext';
 import { DEFAULT_PRODUCT, PRODUCTS } from '../config/products';
+
+const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
+const apiUrl = (path) => `${API_BASE_URL}${path}`;
 
 export default function Dashboard() {
   const { searchQuery } = useApp();
@@ -22,6 +25,7 @@ export default function Dashboard() {
   const [leads, setLeads] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [sendingEmails, setSendingEmails] = useState(false);
+  const [checkingFollowUps, setCheckingFollowUps] = useState(false);
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
   const [campaignProduct, setCampaignProduct] = useState(DEFAULT_PRODUCT);
   const fileInputRef = useRef(null);
@@ -39,7 +43,7 @@ export default function Dashboard() {
 
       // DASHBOARD DATA
       const dashRes =
-        await fetch('http://localhost:5002/api/dashboard');
+        await fetch(apiUrl('/api/dashboard'));
 
       console.log("Dashboard Status:", dashRes.status);
 
@@ -56,7 +60,7 @@ export default function Dashboard() {
 
       // LEADS DATA
       const leadsRes =
-        await fetch('http://localhost:5002/api/ingestion/all');
+        await fetch(apiUrl('/api/ingestion/all'));
 
       console.log("Leads Status:", leadsRes.status);
 
@@ -91,21 +95,10 @@ export default function Dashboard() {
     }
   };
   // ==========================================
-  // INITIAL FETCH & AUTO-REFRESH EVERY 5 SECONDS
+  // INITIAL FETCH
   // ==========================================
   useEffect(() => {
-    // Fetch automatically on component load to ensure stats don't reset to 0
     refreshData();
-
-    if (!isLoggedIn) return;
-
-    // Set up interval for auto-refresh
-    const interval = setInterval(() => {
-      refreshData();
-    }, 5000);
-
-    // Cleanup interval on unmount or when logged out
-    return () => clearInterval(interval);
   }, [isLoggedIn]);
 
   // ==========================================
@@ -136,7 +129,7 @@ export default function Dashboard() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:5002/api/upload-leads', {
+      const response = await fetch(apiUrl('/api/upload-leads'), {
         method: 'POST',
         body: formData
       });
@@ -164,7 +157,7 @@ export default function Dashboard() {
     if (!window.confirm(`Are you sure you want to delete lead: ${email}?`)) return;
 
     try {
-      const response = await fetch(`/api/lead/${encodeURIComponent(email)}`, {
+      const response = await fetch(apiUrl(`/api/lead/${encodeURIComponent(email)}`), {
         method: 'DELETE'
       });
 
@@ -192,7 +185,7 @@ export default function Dashboard() {
       console.log("SEND API CALLED");
 
       const res = await fetch(
-        'http://localhost:5002/api/send-emails',
+        apiUrl('/api/send-emails'),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -230,6 +223,29 @@ export default function Dashboard() {
 
     }
 
+  };
+
+  const checkFollowUps = async () => {
+    setCheckingFollowUps(true);
+
+    try {
+      const response = await fetch(apiUrl('/api/follow-ups/check'), {
+        method: 'POST'
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(data.message || 'Follow-up check started.');
+      } else {
+        alert(data.message || data.error || 'Failed to start follow-up check.');
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Failed to connect to the server to check follow-ups.');
+    } finally {
+      setCheckingFollowUps(false);
+      refreshData();
+    }
   };
 
   // ==========================================
@@ -279,6 +295,19 @@ export default function Dashboard() {
               <Send size={16} />
             )}
             {sendingEmails ? 'Starting Campaign...' : 'Send Emails'}
+          </button>
+          <button
+            onClick={checkFollowUps}
+            disabled={checkingFollowUps}
+            className="btn btn-secondary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            {checkingFollowUps ? (
+              <Loader2 size={16} className="spin" />
+            ) : (
+              <RefreshCw size={16} />
+            )}
+            {checkingFollowUps ? 'Checking...' : 'Check Follow-ups'}
           </button>
         </div>
       </div>
