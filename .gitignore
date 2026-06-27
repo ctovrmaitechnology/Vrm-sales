@@ -1,32 +1,74 @@
+# ==========================
+# Environment Files
+# ==========================
 .env
 .env.*
 !.env.example
 
-node_modules/
-dist/
-build/
-uploads/
-
-*.log
-*.err.log
-*.out.log
-
-backend/node_modules/
-backend/uploads/
 backend/.env
 backend/.env.*
 !backend/.env.example
 
+# ==========================
+# Dependencies
+# ==========================
+node_modules/
+backend/node_modules/
 frontend/node_modules/
+facebook/**/node_modules/
+linkedin/**/node_modules/
+
+# ==========================
+# Build Output
+# ==========================
+dist/
+build/
 frontend/dist/
 frontend/.vite/
 
-facebook/**/node_modules/
-facebook/**/.env
+# ==========================
+# Uploads
+# ==========================
+uploads/
+backend/uploads/
+
+# ==========================
+# Logs & Runtime Files
+# ==========================
+*.log
+*.err
+*.err.log
+*.out.log
+
+# ==========================
+# Session / Cache Files
+# ==========================
 facebook/**/user_data/
 facebook/**/google_scraper_session/
 
-linkedin/**/node_modules/
-linkedin/**/.env
 linkedin/**/google_scraper_session/
 linkedin/**/outlook_session/
+
+# ==========================
+# Facebook & LinkedIn Environment Files
+# ==========================
+facebook/**/.env
+linkedin/**/.env
+
+# ==========================
+# Operating System Files
+# ==========================
+.DS_Store
+Thumbs.db
+
+# ==========================
+# IDE Files
+# ==========================
+.vscode/
+.idea/
+
+# ==========================
+# Optional
+# ==========================
+*.tmp
+*.tempgit add .gitignore
