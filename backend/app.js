@@ -1073,8 +1073,14 @@ app.post('/api/contact', async (req, res) => {
 });
 
 let lastFollowUpDbWarningAt = 0;
+let followUpCheckRunning = false;
+const DEFAULT_FOLLOW_UP_CRON_SCHEDULE = '0 10,18 * * *';
+const FOLLOW_UP_CRON_SCHEDULE = cron.validate(process.env.FOLLOW_UP_CRON_SCHEDULE || '')
+  ? process.env.FOLLOW_UP_CRON_SCHEDULE
+  : DEFAULT_FOLLOW_UP_CRON_SCHEDULE;
+const FOLLOW_UP_CRON_TIMEZONE = process.env.FOLLOW_UP_CRON_TIMEZONE || 'Asia/Kolkata';
 
-cron.schedule('* * * * *', async () => { // TEMPORARY TESTING MODE - Revert back to '0 10 * * *' for production
+async function runFollowUpEmailCheck() {
   console.log("Checking follow-up emails...");
 
   try {
@@ -1084,19 +1090,28 @@ cron.schedule('* * * * *', async () => { // TEMPORARY TESTING MODE - Revert back
       const nowMs = Date.now();
       if (nowMs - lastFollowUpDbWarningAt > 5 * 60 * 1000) {
         console.log(
-          "Follow-up cron skipped: database unavailable at localhost:5432"
+          "Follow-up check skipped: database unavailable"
         );
         lastFollowUpDbWarningAt = nowMs;
       }
-      return;
+      return {
+        success: false,
+        skipped: true,
+        reason: "database_unavailable"
+      };
     }
 
     const now = new Date();
+    let checked = 0;
+    let eligible = 0;
+    let sent = 0;
+    let failed = 0;
 
     // Find users who received initial email but haven't clicked
     const followUpUsers = await getFollowUpLeads();
 
     for (let user of followUpUsers) {
+      checked++;
       const timeSinceInitial = now - new Date(user.initialEmailSentAt);
       const dayMs = 1000 * 60 * 60 * 24;
 
@@ -1114,6 +1129,8 @@ cron.schedule('* * * * *', async () => { // TEMPORARY TESTING MODE - Revert back
       if (!sendFollowUp) {
         continue;
       }
+
+      eligible++;
 
       try {
         let brevoResult;
@@ -1136,23 +1153,89 @@ cron.schedule('* * * * *', async () => { // TEMPORARY TESTING MODE - Revert back
           `Follow-up ${sendFollowUp} sent to ${user.email} (Message ID: ${brevoResult?.messageId || "accepted"})`
         );
 
+        sent++;
+
         const randomDelay = randomDelayMs(3, 5);
         await delay(randomDelay);
 
       } catch (error) {
+        failed++;
         console.log(
           `Follow-up ${sendFollowUp} failed for ${user.email}: ${error.message}`
         );
       }
     }
 
+    console.log(
+      `Follow-up check finished. Checked: ${checked}, Eligible: ${eligible}, Sent: ${sent}, Failed: ${failed}`
+    );
+
+    return {
+      success: true,
+      checked,
+      eligible,
+      sent,
+      failed
+    };
+
   } catch (error) {
     console.log(
-      "Follow-up cron error:",
+      "Follow-up check error:",
       error.message
     );
+    return {
+      success: false,
+      error: error.message
+    };
   }
-});
+}
+
+async function startManualFollowUpCheck(req, res) {
+  if (followUpCheckRunning) {
+    return res.status(409).json({
+      success: false,
+      message: "Follow-up check is already running"
+    });
+  }
+
+  followUpCheckRunning = true;
+
+  res.json({
+    success: true,
+    message: "Follow-up check started"
+  });
+
+  runFollowUpEmailCheck()
+    .catch((error) => {
+      console.log("Manual follow-up check error:", error.message);
+    })
+    .finally(() => {
+      followUpCheckRunning = false;
+    });
+}
+
+app.get('/api/follow-ups/check', startManualFollowUpCheck);
+app.post('/api/follow-ups/check', startManualFollowUpCheck);
+
+if (process.env.ENABLE_FOLLOW_UP_CRON === "true") {
+  cron.schedule(FOLLOW_UP_CRON_SCHEDULE, async () => {
+    if (followUpCheckRunning) {
+      console.log("Follow-up cron skipped: check already running");
+      return;
+    }
+
+    followUpCheckRunning = true;
+    try {
+      await runFollowUpEmailCheck();
+    } finally {
+      followUpCheckRunning = false;
+    }
+  }, {
+    timezone: FOLLOW_UP_CRON_TIMEZONE
+  });
+} else {
+  console.log("Automatic follow-up cron disabled. Use /api/follow-ups/check to run follow-ups manually.");
+}
 
 //async function backfillExistingCustomersToUnifiedDb() {
  // try {
