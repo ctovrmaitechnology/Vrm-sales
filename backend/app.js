@@ -940,12 +940,26 @@ app.get('/api/demo', async (req, res) => {
 app.get('/api/poster', async (req, res) => {
   const { ref } = req.query;
 
-  if (ref) {
+  if (ref !== undefined) {
     try {
       const email = decodeLeadRef(ref);
-      const user = await getLeadByEmail(email);
 
-      await updateUnifiedLeadStatus(user || { email }, "email", "clicked", "poster_clicked", {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const isValidEmail = email && typeof email === 'string' && emailRegex.test(email.trim());
+
+      if (!isValidEmail) {
+        console.log(`Poster tracking skipped. Invalid email: ${email}`);
+        return res.redirect(POSTER_URL);
+      }
+
+      const user = await getLeadByEmail(email.trim());
+
+      if (!user) {
+        console.log(`Poster tracking skipped. Lead not found: ${email}`);
+        return res.redirect(POSTER_URL);
+      }
+
+      await updateUnifiedLeadStatus(user, "email", "clicked", "poster_clicked", {
         Status: "clicked",
         clicked: true,
         clickCount: 1
