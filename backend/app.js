@@ -428,7 +428,7 @@ async function saveLeads(results, filePath, res) {
           email_upload_batch_id: uploadBatchId
         },
         source: "File Upload",
-        Status: "new"
+        Status: existing?.Status || existing?.status || "new"
       }, "email_excel_uploaded");
 
       if (existing) {

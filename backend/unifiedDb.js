@@ -61,6 +61,7 @@ function leadToUser(lead, statusSummary = {}) {
     unsubscribeStatus: Boolean(statusSummary.unsubscribed),
     isDeleted: Boolean(statusSummary.deleted),
     initialEmailSentAt: statusSummary.initialEmailSentAt || null,
+    initialEmailSent: Boolean(statusSummary.initialEmailSent),
     lastEmailSentAt: statusSummary.lastEmailSentAt || null,
     followUp1Sent: Boolean(statusSummary.followUp1Sent),
     followUp2Sent: Boolean(statusSummary.followUp2Sent),
@@ -106,6 +107,7 @@ async function statusSummaryForLead(lead) {
       (row) => row.action === 'lead_deleted' || row.status === 'deleted'
     ),
     initialEmailSentAt: initial?.created_at || null,
+    initialEmailSent: Boolean(initial),
     lastEmailSentAt: latestEmail?.created_at || null,
     followUp1Sent: statuses.some((row) => row.action === 'follow_up_1_sent'),
     followUp2Sent: statuses.some((row) => row.action === 'follow_up_2_sent')
@@ -113,6 +115,16 @@ async function statusSummaryForLead(lead) {
 }
 
 async function insertAutomationLog(action, message, lead = {}, level = 'info') {
+  const EXCLUDED_LOG_ACTIONS = [
+    'email_excel_uploaded',
+    'email_initial_sent_lead_sync',
+    'email_poster_clicked_lead_sync'
+  ];
+
+  if (EXCLUDED_LOG_ACTIONS.includes(action)) {
+    return;
+  }
+
   try {
     const leadId = lead.id || (lead.email
       ? (await prisma.leads.findUnique({ where: { email: lead.email } }))?.id
@@ -233,6 +245,9 @@ async function getCampaignLeads() {
       !user.unsubscribeStatus &&
       !user.isDeleted &&
       (!user.Status || user.Status === 'new') &&
+      !user.initialEmailSent &&
+      user.clickCount === 0 &&
+      user.whatsappClickCount === 0 &&
       user.metadata?.email_campaign_uploaded === true &&
       Boolean(user.metadata?.email_upload_batch_id)
   );
