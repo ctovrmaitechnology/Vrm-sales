@@ -838,6 +838,14 @@ async function sendWhatsAppTemplate(user, industry, product) {
 
   const firstName = getFirstName(user.name);
   const useDynamicWhatsAppUrlButton = process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true";
+  const dynamicWhatsAppUrlButtonIndexes = String(
+    process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEXES ||
+    process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEX ||
+    "0"
+  )
+    .split(",")
+    .map(index => index.trim())
+    .filter(Boolean);
   const demoRef = encodeLeadRef(user.email);
 
   // Clean phone number, ensure digits only
@@ -858,13 +866,15 @@ async function sendWhatsAppTemplate(user, industry, product) {
   ];
 
   if (useDynamicWhatsAppUrlButton) {
-    components.push({
-      type: "button",
-      sub_type: "url",
-      index: "0",
-      parameters: [
-        { type: "text", text: demoRef }
-      ]
+    dynamicWhatsAppUrlButtonIndexes.forEach(index => {
+      components.push({
+        type: "button",
+        sub_type: "url",
+        index,
+        parameters: [
+          { type: "text", text: demoRef }
+        ]
+      });
     });
   }
 
