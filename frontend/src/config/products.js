@@ -1,4 +1,5 @@
 export const PRODUCTS = [
+  { value: 'excel', label: 'Excel' },
   { value: 'workflow_ai', label: 'Workflow AI' },
   { value: 'election_survey', label: 'Election Survey' },
   { value: 'exit_interview_ai', label: 'Exit Interview AI' },

@@ -9,7 +9,9 @@ const WhatsApp = () => {
     totalLeads: 0,
     whatsappSent: 0,
     clickedUsers: 0,
-    totalClicks: 0
+    totalClicks: 0,
+    bookDemoClicks: 0,
+    videoClicks: 0
   });
 
   const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || 'http://localhost:5002';
@@ -24,7 +26,9 @@ const WhatsApp = () => {
             totalLeads: data.totalLeads || 0,
             whatsappSent: data.whatsappSent || 0,
             clickedUsers: data.clickedUsers || 0,
-            totalClicks: data.totalClicks || 0
+            totalClicks: data.totalClicks || 0,
+            bookDemoClicks: data.bookDemoClicks || 0,
+            videoClicks: data.videoClicks || 0
           });
           setLeads(data.users || []);
         }
@@ -70,6 +74,14 @@ const WhatsApp = () => {
             <p className="wa-card-label wa-card-label-purple">Total Clicks</p>
             <h2 className="wa-card-value wa-card-value-purple">{dashboardData.totalClicks}</h2>
           </div>
+          <div className="wa-card wa-card-green">
+            <p className="wa-card-label wa-card-label-green">Book Demo Clicks</p>
+            <h2 className="wa-card-value wa-card-value-green">{dashboardData.bookDemoClicks}</h2>
+          </div>
+          <div className="wa-card wa-card-blue">
+            <p className="wa-card-label wa-card-label-blue">Video Clicks</p>
+            <h2 className="wa-card-value wa-card-value-blue">{dashboardData.videoClicks}</h2>
+          </div>
         </div>
 
         {/* LEADS TABLE */}
@@ -82,7 +94,8 @@ const WhatsApp = () => {
                   <th>Phone Number</th>
                   <th className="wa-text-center">WhatsApp Status</th>
                   <th className="wa-text-center">Click Status</th>
-                  <th className="wa-text-center">Click Count</th>
+                  <th className="wa-text-center">Book Demo Clicks</th>
+                  <th className="wa-text-center">Video Clicks</th>
                   <th className="wa-text-right">Actions</th>
                 </tr>
               </thead>
@@ -134,7 +147,10 @@ const WhatsApp = () => {
                           )}
                         </td>
                         <td className="wa-text-center wa-text-primary">
-                          {lead.whatsappClickCount || 0}
+                          {lead.whatsappBookDemoClickCount || 0}
+                        </td>
+                        <td className="wa-text-center wa-text-primary">
+                          {lead.whatsappVideoClickCount || 0}
                         </td>
                         <td className="wa-text-right">
                           <button
@@ -149,7 +165,7 @@ const WhatsApp = () => {
                   })
                 ) : (
                   <tr>
-                    <td colSpan="6" className="wa-text-center wa-text-secondary" style={{ padding: '3rem 1.5rem' }}>
+                    <td colSpan="7" className="wa-text-center wa-text-secondary" style={{ padding: '3rem 1.5rem' }}>
                       No leads found.
                     </td>
                   </tr>
@@ -164,4 +180,3 @@ const WhatsApp = () => {
 };
 
 export default WhatsApp;
-

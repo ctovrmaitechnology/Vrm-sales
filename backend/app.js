@@ -21,6 +21,7 @@ const {
   updateUnifiedLeadStatus,
   getLeadByEmail,
   upsertUnifiedLead,
+  updateLeadFields,
   getAllActiveLeads
 } = require('./unifiedDb');
 
@@ -33,19 +34,46 @@ fs.mkdirSync(uploadDir, { recursive: true });
 
 const upload = multer({ dest: uploadDir });
 
+const EXCEL_PRODUCT_MODE = 'excel';
+
+function findProductColumn(keys) {
+  return keys.find(k => {
+    const normalized = String(k || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    return ['product', 'product_type', 'product_name'].includes(normalized);
+  });
+}
+
+function normalizeLeadProduct(product) {
+  return product ? resolveProduct(product) : resolveProduct();
+}
+
 function cleanUrl(url) {
   return String(url || "").trim().replace(/\/$/, "");
 }
 
+const IS_DEV = process.env.NODE_ENV !== "production";
+
 const BACKEND_BASE_URL = cleanUrl(
-  process.env.BACKEND_BASE_URL ||
-  process.env.BASE_URL ||
-  ""
+  IS_DEV
+    ? `http://localhost:${process.env.PORT || 5002}`
+    : (process.env.BACKEND_BASE_URL || process.env.BASE_URL || "")
 );
 
 const FRONTEND_BASE_URL = cleanUrl(
-  process.env.FRONTEND_BASE_URL ||
-  "https://vrmaitechnology.com"
+  IS_DEV
+    ? "http://localhost:5173"
+    : (process.env.FRONTEND_BASE_URL || "https://vrmaitechnology.com")
+);
+
+// Poster redirect destination — falls back to the contact page
+const POSTER_URL = cleanUrl(
+  process.env.POSTER_URL ||
+  `${FRONTEND_BASE_URL}/contactus/#send-message-section`
 );
 
 const SENDER_EMAIL =
@@ -60,9 +88,6 @@ function logWhatsAppDisabled() {
   console.log("WhatsApp module disabled via ENABLE_WHATSAPP flag");
 }
 
-const POSTER_URL =
-  process.env.POSTER_URL ||
-  "https://drive.google.com/file/d/1w47KXS2Hpu5xu9o5H7U9qkZLFJfIw8oR/view?usp=drive_link";
 
 function isTemporaryTunnelUrl(url) {
   return /ngrok(?:-free)?\.|trycloudflare\.com/i.test(String(url || ""));
@@ -211,6 +236,26 @@ function randomDelayMs(minMinutes, maxMinutes) {
   );
 }
 
+let emailSendQueue = Promise.resolve();
+
+function enqueueEmailSend(recipientEmail, sendFn) {
+  const queuedSend = emailSendQueue.then(() => sendFn());
+
+  emailSendQueue = queuedSend.then(async () => {
+    const randomDelay = randomDelayMs(3, 5);
+
+    console.log(
+      `Shared email queue waiting ${Math.round(randomDelay / 60000)} minutes before next email...`
+    );
+
+    await delay(randomDelay);
+  }).catch(error => {
+    console.log(`Shared email queue recovered after ${recipientEmail}: ${error.message}`);
+  });
+
+  return queuedSend;
+}
+
 function buildUnsubscribeUrl(email) {
   if (hasPublicBackendUrl()) {
     const token = encodeURIComponent(Buffer.from(email).toString('base64'));
@@ -240,33 +285,44 @@ function buildUnsubscribeHeaders(unsubscribeUrl) {
 }
 
 function buildDemoUrl(email) {
-  return buildPosterUrl(email);
-}
-
-function buildWhatsAppDemoUrl(email) {
-  if (hasPublicBackendUrl()) {
-    return `${BACKEND_BASE_URL}/api/book-demo?email=${encodeURIComponent(email)}&src=wa`;
+  if (hasPublicBackendUrl() && email) {
+    return `${BACKEND_BASE_URL}/api/demo?ref=${encodeLeadRef(email)}`;
   }
 
-  return `https://drive.google.com/file/d/1w47KXS2Hpu5xu9o5H7U9qkZLFJfIw8oR/view?usp=drive_link`;
+  return `${FRONTEND_BASE_URL}/contactus/#send-message-section`;
+}
+
+function buildTrackedDemoRedirectUrl(email, redirectUrl, kind = "demo") {
+  if (hasPublicBackendUrl() && email && redirectUrl) {
+    return `${BACKEND_BASE_URL}/api/demo?ref=${encodeLeadRef(email)}&kind=${encodeURIComponent(kind)}&redirectUrl=${encodeURIComponent(redirectUrl)}`;
+  }
+
+  return redirectUrl || `${FRONTEND_BASE_URL}/contactus/#send-message-section`;
 }
 
 function buildPosterUrl(email) {
-  if (BACKEND_BASE_URL && email) {
+  if (hasPublicBackendUrl() && email) {
     return `${BACKEND_BASE_URL}/api/poster?ref=${encodeLeadRef(email)}`;
   }
 
   return POSTER_URL;
 }
 
-function buildDeliverabilityHeaders(user, unsubscribeUrl) {
+function buildWhatsAppDemoUrl(email) {
+  if (hasPublicBackendUrl() && email) {
+    return `${BACKEND_BASE_URL}/api/book-demo?ref=${encodeLeadRef(email)}`;
+  }
+
+  return `${FRONTEND_BASE_URL}/contactus/#send-message-section`;
+}
+
+function buildDeliverabilityHeaders(user) {
   const recipientKey =
     Buffer.from(String(user.email || "").toLowerCase())
       .toString('hex')
       .slice(0, 16);
 
   return {
-    ...buildUnsubscribeHeaders(unsubscribeUrl),
     'X-Mailin-Track': 'false',
     'Message-ID': `<vrm-${Date.now()}-${user.id || recipientKey}@vrmaitechnology.com>`,
     'X-Priority': '3 (Normal)',
@@ -276,27 +332,94 @@ function buildDeliverabilityHeaders(user, unsubscribeUrl) {
   };
 }
 
-async function executeBrevoApi(user, subject, messageText) {
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderButton(href, label, backgroundColor) {
+  return `
+    <table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 16px; margin-top: 20px;">
+      <tr>
+        <td bgcolor="${backgroundColor}" style="border-radius: 4px;">
+          <a href="${escapeHtml(href)}" target="_blank" style="background-color: ${backgroundColor}; border: 1px solid ${backgroundColor}; border-radius: 4px; color: #ffffff; display: inline-block; font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; line-height: 20px; padding: 10px 18px; text-decoration: none;">${escapeHtml(label)}</a>
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
+function renderEmailParagraphs(messageText, getTrackedHref, bookDemoHref) {
+  const paragraphs = String(messageText || "").split('\n\n');
+  const html = [];
+  let hasBookDemoButton = false;
+
+  for (let index = 0; index < paragraphs.length; index++) {
+    const paragraph = paragraphs[index].trim();
+    const nextParagraph = paragraphs[index + 1]?.trim() || "";
+    const lines = paragraph.split('\n').map((line) => line.trim()).filter(Boolean);
+
+    if (lines.length === 2 && /^watch demo video:$/i.test(lines[0]) && /^https?:\/\//i.test(lines[1])) {
+      html.push(renderButton(getTrackedHref(lines[1], "video"), "Watch Demo Video", "#111827"));
+      continue;
+    }
+
+    if (lines.length === 2 && /^book a demo:$/i.test(lines[0]) && /^https?:\/\//i.test(lines[1])) {
+      hasBookDemoButton = true;
+      html.push(renderButton(getTrackedHref(bookDemoHref, "demo"), "Book a Demo", "#0076FF"));
+      continue;
+    }
+
+    if (/^watch demo video:$/i.test(paragraph) && /^https?:\/\//i.test(nextParagraph)) {
+      html.push(renderButton(getTrackedHref(nextParagraph, "video"), "Watch Demo Video", "#111827"));
+      index++;
+      continue;
+    }
+
+    if (/^book a demo:$/i.test(paragraph) && /^https?:\/\//i.test(nextParagraph)) {
+      hasBookDemoButton = true;
+      html.push(renderButton(getTrackedHref(bookDemoHref, "demo"), "Book a Demo", "#0076FF"));
+      index++;
+      continue;
+    }
+
+    if (paragraph) {
+      html.push(
+        `<p style="margin-bottom: 16px;">${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`
+      );
+    }
+  }
+
+  return {
+    html: html.join(''),
+    hasBookDemoButton
+  };
+}
+
+async function executeBrevoApiNow(user, subject, messageText) {
   const firstName = getFirstName(user.name);
-  const demoLink = buildDemoUrl(user.email);
-  const unsubscribeUrl = buildUnsubscribeUrl(user.email);
-  const deliverabilityHeaders = buildDeliverabilityHeaders(user, unsubscribeUrl);
+  const bookDemoHref = `${FRONTEND_BASE_URL}/contactus/#send-message-section`;
+  const demoLink = buildTrackedDemoRedirectUrl(user.email, bookDemoHref, "demo");
+  const getTrackedHref = (redirectUrl, kind) => buildTrackedDemoRedirectUrl(user.email, redirectUrl, kind);
+  const deliverabilityHeaders = buildDeliverabilityHeaders(user);
   const hasGreeting = /^hi\b/i.test(String(messageText || "").trim());
-  const textIntro = hasGreeting ? messageText : `Hi ${firstName},\n\n${messageText}`;
   const htmlIntro = hasGreeting
     ? ""
     : `<p style="margin-bottom: 16px;">Hi ${firstName},</p>`;
-
-  const finalMessage = `${textIntro}\n\nBook a demo:\n${demoLink}`;
+  const renderedContent = renderEmailParagraphs(messageText, getTrackedHref, bookDemoHref);
 
   const finalHtml = `
     <html>
       <body style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #333333; margin: 0; padding: 20px;">
         ${htmlIntro}
-        ${messageText.split('\n\n').map(p => `<p style="margin-bottom: 16px;">${p.trim().replace(/\n/g, '<br>')}</p>`).join('')}
-        <p style="margin-bottom: 16px; margin-top: 24px;">
-          <a href="${demoLink}" style="background-color: #0076FF; color: #ffffff; padding: 10px 18px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;">Book a Demo</a>
-        </p>
+        ${renderedContent.html}
+        ${renderedContent.hasBookDemoButton ? "" : `
+          ${renderButton(demoLink, "Book a Demo", "#0076FF")}
+        `}
       </body>
     </html>
   `;
@@ -306,7 +429,6 @@ async function executeBrevoApi(user, subject, messageText) {
     to: [{ email: user.email, name: firstName }],
     replyTo: { email: "contactus@vrmaitechnology.com", name: "Harini" },
     subject,
-    textContent: finalMessage,
     htmlContent: finalHtml,
     headers: deliverabilityHeaders
   };
@@ -329,9 +451,15 @@ async function executeBrevoApi(user, subject, messageText) {
   return response.json();
 }
 
+async function executeBrevoApi(user, subject, messageText) {
+  return enqueueEmailSend(user.email, () =>
+    executeBrevoApiNow(user, subject, messageText)
+  );
+}
+
 async function sendInitialEmail(user, product) {
   const campaign = getCampaign(product);
-  if (campaign && product !== "workflow_ai") {
+  if (campaign) {
     const firstName = getFirstName(user.name);
     return executeBrevoApi(
       user,
@@ -395,14 +523,50 @@ VRM AI Technology (OPC) PVT LTD`;
 }
 
 async function sendFollowUp1(user) {
+  const campaign = getCampaign(user.product_type);
+  if (campaign?.followUps?.[0]) {
+    const firstName = getFirstName(user.name);
+    return executeBrevoApi(
+      user,
+      campaign.followUps[0].subject,
+      campaign.followUps[0].email.replace(/\[Name\]/g, firstName)
+    );
+  }
+
   const subject = "Following up: WorkflowAI";
   const messageText = "I wanted to quickly follow up on my previous email. I know things can get busy, but I genuinely believe WorkflowAI could save your team significant hours every week by automating manual hiring steps.\n\nDo you have a few minutes this week to see a quick demo?";
   return executeBrevoApi(user, subject, messageText);
 }
 
 async function sendFollowUp2(user) {
+  const campaign = getCampaign(user.product_type);
+  if (campaign?.followUps?.[1]) {
+    const firstName = getFirstName(user.name);
+    return executeBrevoApi(
+      user,
+      campaign.followUps[1].subject,
+      campaign.followUps[1].email.replace(/\[Name\]/g, firstName)
+    );
+  }
+
   const subject = "Checking in one last time";
   const messageText = "I'm checking in one last time regarding WorkflowAI. If automation isn't a priority for your team right now, I completely understand and won't crowd your inbox further.\n\nHowever, if you're still curious about how we streamline screening and assessments, you can always book a quick walkthrough below.";
+  return executeBrevoApi(user, subject, messageText);
+}
+
+async function sendFollowUp3(user) {
+  const campaign = getCampaign(user.product_type);
+  if (campaign?.followUps?.[2]) {
+    const firstName = getFirstName(user.name);
+    return executeBrevoApi(
+      user,
+      campaign.followUps[2].subject,
+      campaign.followUps[2].email.replace(/\[Name\]/g, firstName)
+    );
+  }
+
+  const subject = "Final follow-up: WorkflowAI";
+  const messageText = "This is my final follow-up regarding WorkflowAI. If automation becomes a priority for your team later, you can always use the demo link below to book a quick walkthrough.\n\nWishing you and your team the best.";
   return executeBrevoApi(user, subject, messageText);
 }
 
@@ -461,6 +625,40 @@ app.get('/api/ingestion/all', async (req, res) => {
   }
 });
 
+app.patch('/api/lead/:email/status', async (req, res) => {
+  const email = req.params.email;
+  const { status } = req.body || {};
+
+  if (status !== 'converted_to_lead') {
+    return res.status(400).json({
+      error: "Only Converted to Lead can be set manually"
+    });
+  }
+
+  try {
+    const updatedLead = await updateLeadFields(email, { status });
+    if (!updatedLead) {
+      return res.status(404).json({
+        error: "Lead not found"
+      });
+    }
+
+    await updateUnifiedLeadStatus(updatedLead, "manual", status, "converted_to_lead", {
+      manual: true
+    });
+
+    res.json({
+      success: true,
+      lead: await getLeadByEmail(email)
+    });
+  } catch (error) {
+    console.error("Manual lead status update failed:", error.message);
+    res.status(500).json({
+      error: "Failed to update lead status"
+    });
+  }
+});
+
 app.post('/api/upload-leads', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -495,7 +693,7 @@ app.post('/api/upload-leads', upload.single('file'), async (req, res) => {
             keys.find(k => k.includes('email'));
 
           const phoneKey = keys.find(k => k.includes('phone'));
-          const productKey = keys.find(k => k.includes('product_type') || k.includes('product type'));
+          const productKey = findProductColumn(keys);
 
           if (results.length === 0) {
             console.log("CSV First row detected keys -> emailKey:", emailKey, "nameKey:", nameKey);
@@ -515,7 +713,7 @@ app.post('/api/upload-leads', upload.single('file'), async (req, res) => {
               name,
               email,
               phone,
-              product_type: productKey ? String(data[productKey]).trim() || 'workflow_ai' : 'workflow_ai'
+              product_type: normalizeLeadProduct(productKey ? data[productKey] : '')
             });
           }
         })
@@ -560,10 +758,7 @@ app.post('/api/upload-leads', upload.single('file'), async (req, res) => {
           keys.find(k =>
             k.toLowerCase().includes('phone')
           );
-        const productKey = keys.find(k => {
-          const key = k.toLowerCase();
-          return key.includes('product_type') || key.includes('product type');
-        });
+        const productKey = findProductColumn(keys);
 
         if (index === 0) {
           console.log("XLSX First row detected keys -> emailKey:", emailKey, "nameKey:", nameKey);
@@ -583,7 +778,7 @@ app.post('/api/upload-leads', upload.single('file'), async (req, res) => {
             name,
             email,
             phone,
-            product_type: productKey ? String(data[productKey]).trim() || 'workflow_ai' : 'workflow_ai'
+            product_type: normalizeLeadProduct(productKey ? data[productKey] : '')
           });
         }
       });
@@ -641,10 +836,9 @@ async function sendWhatsAppTemplate(user, industry, product) {
     return { skipped: true, reason: "product_template_not_configured" };
   }
 
-  // Support template variables: customer name, company name, demo link
   const firstName = getFirstName(user.name);
-  const companyName = industry === "it_services" ? "your tech team" : (industry === "recruitment" ? "your staffing team" : "your team");
-  const demoLink = buildWhatsAppDemoUrl(user.email);
+  const useDynamicWhatsAppUrlButton = process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true";
+  const demoRef = encodeLeadRef(user.email);
 
   // Clean phone number, ensure digits only
   let cleanPhone = String(phone).replace(/\D/g, '');
@@ -654,7 +848,27 @@ async function sendWhatsAppTemplate(user, industry, product) {
     cleanPhone = '91' + cleanPhone;
   }
 
-  // Sample WhatsApp API payload for all 3 templates
+  const components = [
+    {
+      type: "body",
+      parameters: [
+        { type: "text", text: firstName }
+      ]
+    }
+  ];
+
+  if (useDynamicWhatsAppUrlButton) {
+    components.push({
+      type: "button",
+      sub_type: "url",
+      index: "0",
+      parameters: [
+        { type: "text", text: demoRef }
+      ]
+    });
+  }
+
+  // Sample WhatsApp API payload for all configured product templates
   const payload = {
     messaging_product: "whatsapp",
     to: cleanPhone,
@@ -664,14 +878,7 @@ async function sendWhatsAppTemplate(user, industry, product) {
       language: {
         code: "en" // or en_US, adjust to match your approved template language
       },
-      components: [
-        {
-          type: "body",
-          parameters: [
-            { type: "text", text: firstName }
-          ]
-        }
-      ]
+      components
     }
   };
 
@@ -698,82 +905,6 @@ async function sendWhatsAppTemplate(user, industry, product) {
   }
 }
 
-async function sendWhatsAppFollowUp(user, followUpNumber, industry) {
-  if (!isWhatsAppEnabled()) {
-    logWhatsAppDisabled();
-    return { skipped: true, reason: "whatsapp_disabled" };
-  }
-
-  const phone = user.phone || user.phoneNumber;
-  if (!phone) {
-    console.log(`WhatsApp Follow-Up skipped for ${user.email} - No phone number found.`);
-    return;
-  }
-
-  const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-  const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-
-  if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
-    console.log("WhatsApp skipped - Missing WHATSAPP_TOKEN or PHONE_NUMBER_ID in .env");
-    return;
-  }
-
-  let templateName = "";
-  if (industry === "it_services") {
-    templateName = "techhiring_v3";
-  } else if (industry === "recruitment") {
-    templateName = "placement_v3";
-  } else {
-    templateName = "nontech_v3";
-  }
-
-  const firstName = getFirstName(user.name);
-  const demoLink = buildWhatsAppDemoUrl(user.email);
-
-  let cleanPhone = String(phone).replace(/\D/g, '');
-  if (cleanPhone.length === 10) {
-    cleanPhone = '91' + cleanPhone;
-  }
-
-  const payload = {
-    messaging_product: "whatsapp",
-    to: cleanPhone,
-    type: "template",
-    template: {
-      name: templateName,
-      language: {
-        code: "en"
-      },
-      components: [
-        {
-          type: "body",
-          parameters: [
-            { type: "text", text: firstName }
-          ]
-        }
-      ]
-    }
-  };
-
-  try {
-    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
-
-    const response = await axios.post(url, payload, {
-      headers: {
-        'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    await updateUnifiedLeadStatus(user, "whatsapp", "sent", `follow_up_${followUpNumber}_sent`, {
-      whatsappStatus: "sent"
-    });
-
-    console.log(`WhatsApp Follow-Up ${followUpNumber} '${templateName}' sent to ${phone} (User: ${user.email}) - Message ID: ${response.data.messages[0].id}`);
-  } catch (error) {
-    console.log(`WhatsApp Follow-Up API Error for ${user.email}:`, error.response?.data || error.message);
-  }
-}
 // --------------------------------------
 
 app.post('/api/reset', async (req, res) => {
@@ -802,12 +933,14 @@ app.post('/api/send-emails', async (req, res) => {
 
   try {
     const requestedProduct = String(req.body?.product || '').trim();
-    if (!isValidProduct(requestedProduct)) {
+    const useExcelProductColumn = requestedProduct.toLowerCase() === EXCEL_PRODUCT_MODE;
+
+    if (!useExcelProductColumn && !isValidProduct(requestedProduct)) {
       emailCampaignRunning = false;
       return res.status(400).json({ success: false, error: 'Please select a valid product.' });
     }
-    const product = resolveProduct(requestedProduct);
-    const users = await getCampaignLeads(product);
+    const product = useExcelProductColumn ? null : resolveProduct(requestedProduct);
+    const users = await getCampaignLeads();
 
     res.json({
       success: true,
@@ -819,7 +952,7 @@ app.post('/api/send-emails', async (req, res) => {
         let success = 0;
         let failed = 0;
 
-        for (const [userIndex, user] of users.entries()) {
+        for (const user of users) {
           let sentSuccessfully = false;
           let attempts = 0;
 
@@ -827,7 +960,9 @@ app.post('/api/send-emails', async (req, res) => {
             try {
               attempts++;
 
-              const leadProduct = product;
+              const leadProduct = useExcelProductColumn
+                ? normalizeLeadProduct(user.product_type)
+                : product;
               const brevoResult = await sendInitialEmail(user, leadProduct);
 
               sentSuccessfully = true;
@@ -874,15 +1009,6 @@ app.post('/api/send-emails', async (req, res) => {
             }
           }
 
-          if (userIndex < users.length - 1) {
-            const randomDelay = randomDelayMs(3, 5);
-
-            console.log(
-              `Waiting ${Math.round(randomDelay / 60000)} minutes before next email...`
-            );
-
-            await delay(randomDelay);
-          }
         }
 
         console.log(
@@ -911,19 +1037,33 @@ app.post('/api/send-emails', async (req, res) => {
 app.get('/api/demo', async (req, res) => {
   const ref = req.query.ref || getCookieValue(req, 'vrm_lead_ref');
   const queryEmail = String(req.query.email || "").trim();
+  const clickKind = String(req.query.kind || "demo").trim().toLowerCase();
+  const isVideoClick = clickKind === "video";
 
   if (ref || queryEmail) {
     try {
       const email = ref ? decodeLeadRef(ref) : queryEmail;
       const user = await getLeadByEmail(email);
 
-      await updateUnifiedLeadStatus(user || { email }, "email", "clicked", "demo_clicked", {
-        Status: "clicked",
+      if (!user?.initialEmailSent) {
+        console.log(`${isVideoClick ? "Video" : "Demo"} tracking skipped. Initial email not sent:`, email);
+        if (req.query.redirectUrl) {
+          return res.redirect(String(req.query.redirectUrl));
+        }
+        return res.redirect(`${FRONTEND_BASE_URL}/contactus/#send-message-section`);
+      }
+
+      const currentStatus = user?.Status || user?.status || "sent";
+      const nextStatus = isVideoClick ? currentStatus : "clicked";
+
+      await updateUnifiedLeadStatus(user || { email }, "email", nextStatus, isVideoClick ? "video_clicked" : "demo_clicked", {
+        Status: nextStatus,
         clicked: true,
-        clickCount: 1
+        clickCount: isVideoClick ? 0 : 1,
+        clickKind: isVideoClick ? "video" : "demo"
       });
 
-      console.log("Demo clicked by:", email);
+      console.log(`${isVideoClick ? "Video" : "Demo"} clicked by:`, email);
 
     } catch (error) {
       console.log("Demo tracking error:", error.message);
@@ -937,36 +1077,34 @@ app.get('/api/demo', async (req, res) => {
   return res.redirect(`${FRONTEND_BASE_URL}/contactus/#send-message-section`);
 });
 
-app.get('/api/poster', async (req, res) => {
-  const { ref } = req.query;
 
-  if (ref !== undefined) {
+app.get('/api/poster', async (req, res) => {
+  const ref = req.query.ref || getCookieValue(req, 'vrm_lead_ref');
+
+  if (ref) {
     try {
       const email = decodeLeadRef(ref);
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const isValidEmail = email && typeof email === 'string' && emailRegex.test(email.trim());
+      res.cookie('vrm_lead_ref', ref, {
+        httpOnly: true,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        sameSite: 'lax',
+        secure: /^https:\/\//i.test(BACKEND_BASE_URL)
+      });
 
-      if (!isValidEmail) {
-        console.log(`Poster tracking skipped. Invalid email: ${email}`);
+      const user = await getLeadByEmail(email);
+
+      if (!user?.initialEmailSent) {
+        console.log("Poster tracking skipped. Initial email not sent:", email);
         return res.redirect(POSTER_URL);
       }
 
-      const user = await getLeadByEmail(email.trim());
-
-      if (!user) {
-        console.log(`Poster tracking skipped. Lead not found: ${email}`);
-        return res.redirect(POSTER_URL);
-      }
-
-      await updateUnifiedLeadStatus(user, "email", "clicked", "poster_clicked", {
-        Status: "clicked",
+      await updateUnifiedLeadStatus(user || { email }, "email", "clicked", "poster_clicked", {
         clicked: true,
         clickCount: 1
       });
 
       console.log("Poster clicked by:", email);
-
     } catch (error) {
       console.log("Poster tracking error:", error.message);
     }
@@ -976,26 +1114,39 @@ app.get('/api/poster', async (req, res) => {
 });
 
 app.get('/api/book-demo', async (req, res) => {
-  const { email, src } = req.query;
+  const ref = req.query.ref || req.query.email;
+  const clickKind = String(req.query.kind || "demo").trim().toLowerCase();
+  const isVideoClick = clickKind === "video";
+  const redirectUrl =
+    req.query.redirectUrl ||
+    `${FRONTEND_BASE_URL}/contactus/#send-message-section`;
 
-  if (email && src === 'wa') {
+  if (ref) {
     try {
+      const rawRef = decodeURIComponent(String(ref).trim());
+      const email = rawRef.includes("@") ? rawRef : decodeLeadRef(rawRef);
       const user = await getLeadByEmail(email);
 
-      await updateUnifiedLeadStatus(user || { email }, "whatsapp", "clicked", "demo_clicked", {
+      if (!user || user.isDeleted || user.unsubscribeStatus) {
+        console.log(`WhatsApp ${isVideoClick ? "video" : "demo"} tracking skipped. Lead not active: ${email}`);
+        return res.redirect(redirectUrl);
+      }
+
+      await updateUnifiedLeadStatus(user, "whatsapp", "clicked", isVideoClick ? "video_clicked" : "demo_clicked", {
         whatsappStatus: "clicked",
         clicked: true,
         clickCount: 1,
-        whatsappClickCount: 1
+        whatsappClickCount: 1,
+        clickKind: isVideoClick ? "video" : "demo"
       });
 
-      console.log(`WhatsApp Demo clicked by: ${email}`);
+      console.log(`WhatsApp ${isVideoClick ? "Video" : "Demo"} clicked by: ${email}`);
     } catch (error) {
-      console.log("WhatsApp Demo tracking error:", error.message);
+      console.log("WhatsApp click tracking error:", error.message);
     }
   }
 
-  return res.redirect(`${FRONTEND_BASE_URL}/contactus`);
+  return res.redirect(redirectUrl);
 });
 
 app.all('/api/unsubscribe', async (req, res) => {
@@ -1057,18 +1208,17 @@ app.delete('/api/lead/:email', async (req, res) => {
   const email = req.params.email;
 
   try {
-      const deletedLead =
-      await prisma.customer.update({
-        where: {
-          email
-        },
-        data: {
-          isDeleted: true
-        }
+    const deletedLead = await getLeadByEmail(email);
+
+    if (!deletedLead) {
+      return res.status(404).json({
+        error: "Lead not found"
       });
-      await updateUnifiedLeadStatus(deletedLead, "email", "deleted", "lead_deleted", {
-        source: "deleted"
-      });
+    }
+
+    await updateUnifiedLeadStatus(deletedLead, "email", "deleted", "lead_deleted", {
+      source: "deleted"
+    });
 
     res.json({
       success: true,
@@ -1110,6 +1260,7 @@ app.post('/api/contact', async (req, res) => {
 
 let lastFollowUpDbWarningAt = 0;
 let followUpCheckRunning = false;
+let lastFollowUpCronRunKey = "";
 const DEFAULT_FOLLOW_UP_CRON_SCHEDULE = '0 10,18 * * *';
 const FOLLOW_UP_CRON_SCHEDULE = cron.validate(process.env.FOLLOW_UP_CRON_SCHEDULE || '')
   ? process.env.FOLLOW_UP_CRON_SCHEDULE
@@ -1148,18 +1299,36 @@ async function runFollowUpEmailCheck() {
 
     for (let user of followUpUsers) {
       checked++;
+      user = await getLeadByEmail(user.email);
+
+      if (
+        !user ||
+        user.unsubscribeStatus ||
+        user.isDeleted ||
+        !['sent', 'clicked'].includes(user.Status) ||
+        !user.initialEmailSentAt ||
+        user.Status === 'converted_to_lead' ||
+        user.Status === 'follow_up_sent'
+      ) {
+        continue;
+      }
+
       const timeSinceInitial = now - new Date(user.initialEmailSentAt);
       const dayMs = 1000 * 60 * 60 * 24;
 
       let sendFollowUp = null;
 
-      // Day 3 Follow-up
-      if (!user.followUp1Sent && timeSinceInitial >= (3 * dayMs)) {
+      // Day 7 Follow-up
+      if (!user.followUp1Sent && timeSinceInitial >= (7 * dayMs)) {
         sendFollowUp = "1";
       }
-      // Day 7 Follow-up
-      else if (user.followUp1Sent && !user.followUp2Sent && timeSinceInitial >= (7 * dayMs)) {
+      // Day 15 Follow-up
+      else if (user.followUp1Sent && !user.followUp2Sent && timeSinceInitial >= (15 * dayMs)) {
         sendFollowUp = "2";
+      }
+      // Day 30 Follow-up
+      else if (user.followUp1Sent && user.followUp2Sent && !user.followUp3Sent && timeSinceInitial >= (30 * dayMs)) {
+        sendFollowUp = "3";
       }
 
       if (!sendFollowUp) {
@@ -1169,6 +1338,29 @@ async function runFollowUpEmailCheck() {
       eligible++;
 
       try {
+        user = await getLeadByEmail(user.email);
+
+        if (
+          !user ||
+          user.unsubscribeStatus ||
+          user.isDeleted ||
+          !['sent', 'clicked'].includes(user.Status) ||
+          user.Status === 'converted_to_lead' ||
+          user.Status === 'follow_up_sent'
+        ) {
+          console.log(`Follow-up ${sendFollowUp} skipped for ${user?.email || 'unknown'} - lead no longer eligible`);
+          continue;
+        }
+
+        if (
+          (sendFollowUp === "1" && user.followUp1Sent) ||
+          (sendFollowUp === "2" && user.followUp2Sent) ||
+          (sendFollowUp === "3" && user.followUp3Sent)
+        ) {
+          console.log(`Follow-up ${sendFollowUp} skipped for ${user.email} - already sent`);
+          continue;
+        }
+
         let brevoResult;
 
         if (sendFollowUp === "1") {
@@ -1183,6 +1375,19 @@ async function runFollowUpEmailCheck() {
             followUp2Sent: true,
             lastEmailSentAt: new Date()
           });
+        } else if (sendFollowUp === "3") {
+          brevoResult = await sendFollowUp3(user);
+          await updateUnifiedLeadStatus(user, "email", "sent", "follow_up_3_sent", {
+            followUp3Sent: true,
+            lastEmailSentAt: new Date()
+          });
+
+          const latestLead = await getLeadByEmail(user.email);
+          if (latestLead && ['sent', 'clicked'].includes(latestLead.Status)) {
+            await updateUnifiedLeadStatus(latestLead, "email", "follow_up_sent", "follow_up_completed", {
+              followUpCompleted: true
+            });
+          }
         }
 
         console.log(
@@ -1190,9 +1395,6 @@ async function runFollowUpEmailCheck() {
         );
 
         sent++;
-
-        const randomDelay = randomDelayMs(3, 5);
-        await delay(randomDelay);
 
       } catch (error) {
         failed++;
@@ -1250,16 +1452,24 @@ async function startManualFollowUpCheck(req, res) {
     });
 }
 
-app.get('/api/follow-ups/check', startManualFollowUpCheck);
 app.post('/api/follow-ups/check', startManualFollowUpCheck);
 
 if (process.env.ENABLE_FOLLOW_UP_CRON === "true") {
   cron.schedule(FOLLOW_UP_CRON_SCHEDULE, async () => {
+    const now = new Date();
+    const runKey = now.toISOString().slice(0, 16);
+
+    if (lastFollowUpCronRunKey === runKey) {
+      console.log("Follow-up cron skipped: already ran this minute");
+      return;
+    }
+
     if (followUpCheckRunning) {
       console.log("Follow-up cron skipped: check already running");
       return;
     }
 
+    lastFollowUpCronRunKey = runKey;
     followUpCheckRunning = true;
     try {
       await runFollowUpEmailCheck();

@@ -6,6 +6,23 @@ import { DEFAULT_PRODUCT, PRODUCTS } from '../config/products';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
+const LEAD_STATUS_LABELS = {
+  new: 'Not Sent',
+  sent: 'Not Clicked',
+  clicked: 'Clicked',
+  converted_to_lead: 'Converted to Lead',
+  follow_up_sent: 'Follow-up Sent'
+};
+
+const getLeadStatusLabel = (status) => LEAD_STATUS_LABELS[status] || 'Not Sent';
+
+const getFollowUpStatusLabel = (lead) => {
+  const count = lead.followUpCount || [lead.followUp1Sent, lead.followUp2Sent, lead.followUp3Sent].filter(Boolean).length;
+  if (count >= 3 || lead.Status === 'follow_up_sent') return 'Follow-up 3 Sent';
+  if (count === 2) return 'Follow-up 2 Sent';
+  if (count === 1) return 'Follow-up 1 Sent';
+  return 'No Follow-up Sent';
+};
 
 export default function Dashboard() {
   const { searchQuery } = useApp();
@@ -173,6 +190,28 @@ export default function Dashboard() {
     }
   };
 
+  const updateLeadStatus = async (lead, status) => {
+    if (status !== 'converted_to_lead' || lead.Status === status) return;
+
+    try {
+      const response = await fetch(apiUrl(`/api/lead/${encodeURIComponent(lead.email)}/status`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        refreshData();
+      } else {
+        alert(data.error || 'Failed to update lead status.');
+      }
+    } catch (err) {
+      console.error('Status update error:', err);
+      alert('An error occurred while updating the lead status.');
+    }
+  };
+
   // ==========================================
   // SEND EMAILS
   // ==========================================
@@ -270,7 +309,7 @@ export default function Dashboard() {
           <input
             type="file"
             ref={fileInputRef}
-            accept=".csv"
+            accept=".csv,.xlsx,.xls"
             onChange={handleFileUpload}
             style={{ display: 'none' }}
           />
@@ -426,8 +465,10 @@ export default function Dashboard() {
                     <th>Name</th>
                     <th>Email</th>
                     <th className="wa-text-center">Sent Status</th>
-                    <th className="wa-text-center">Click Status</th>
-                    <th className="wa-text-center">Click Count</th>
+                    <th className="wa-text-center">Lead Status</th>
+                    <th className="wa-text-center">Follow-up Status</th>
+                    <th className="wa-text-center">Book Demo Clicks</th>
+                    <th className="wa-text-center">Video Clicks</th>
                     <th className="wa-text-right">Actions</th>
                   </tr>
                 </thead>
@@ -442,9 +483,14 @@ export default function Dashboard() {
                         return name.toLowerCase().includes(query) || email.toLowerCase().includes(query);
                       })
                       .map((lead, index) => {
-                      const isSent = lead.Status === 'sent' || lead.Status === 'clicked';
+                      const isSent = ['sent', 'clicked', 'converted_to_lead', 'follow_up_sent'].includes(lead.Status);
                       const isClicked = lead.Status === 'clicked';
-                      const clickCount = lead.clickCount || 0;
+                      const bookDemoClickCount = lead.bookDemoClickCount || 0;
+                      const videoClickCount = lead.videoClickCount || 0;
+                      const canConvert = lead.Status === 'sent' || lead.Status === 'clicked';
+                      const followUpStatus = getFollowUpStatusLabel(lead);
+                      const followUpComplete = followUpStatus === 'Follow-up 3 Sent';
+                      const leadStatusValue = followUpComplete ? 'follow_up_sent' : (lead.Status || 'new');
 
                       return (
                         <tr
@@ -469,18 +515,29 @@ export default function Dashboard() {
                             )}
                           </td>
                           <td className="wa-text-center">
-                            {isClicked ? (
-                              <span className="wa-badge wa-badge-green">
-                                Clicked
-                              </span>
-                            ) : (
-                              <span className="wa-badge wa-badge-red">
-                                Not Clicked
-                              </span>
-                            )}
+                            <select
+                              className="form-control"
+                              value={leadStatusValue}
+                              onChange={(event) => updateLeadStatus(lead, event.target.value)}
+                              disabled={!canConvert || followUpComplete}
+                              style={{ minWidth: 170 }}
+                            >
+                              <option value={leadStatusValue}>{getLeadStatusLabel(leadStatusValue)}</option>
+                              {canConvert && (
+                                <option value="converted_to_lead">Converted to Lead</option>
+                              )}
+                            </select>
+                          </td>
+                          <td className="wa-text-center">
+                            <span className={`wa-badge ${followUpComplete ? 'wa-badge-blue' : 'wa-badge-gray'}`}>
+                              {followUpStatus}
+                            </span>
                           </td>
                           <td className="wa-text-center wa-text-primary">
-                            {clickCount}
+                            {bookDemoClickCount}
+                          </td>
+                          <td className="wa-text-center wa-text-primary">
+                            {videoClickCount}
                           </td>
                           <td className="wa-text-right">
                             <button
@@ -495,7 +552,7 @@ export default function Dashboard() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan="6" className="wa-text-center wa-text-secondary" style={{ padding: '3rem 1.5rem' }}>
+                      <td colSpan="8" className="wa-text-center wa-text-secondary" style={{ padding: '3rem 1.5rem' }}>
                         No leads found.
                       </td>
                     </tr>

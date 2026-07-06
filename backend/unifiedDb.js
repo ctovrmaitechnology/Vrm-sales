@@ -13,6 +13,9 @@ function dbLog(message) {
   console.log(message);
 }
 
+const FOLLOW_UP_ACTIVE_STATUSES = ['sent', 'clicked'];
+const FOLLOW_UP_STOP_STATUSES = ['converted_to_lead', 'follow_up_sent'];
+
 function normalizeLead(user = {}) {
   const productType = user.product_type || user.productType || user.metadata?.product_type || 'workflow_ai';
   return {
@@ -40,6 +43,11 @@ function normalizeLead(user = {}) {
 function leadToUser(lead, statusSummary = {}) {
   if (!lead) return null;
   const metadata = lead.metadata && typeof lead.metadata === 'object' ? lead.metadata : {};
+  const followUpCount = [
+    statusSummary.followUp1Sent,
+    statusSummary.followUp2Sent,
+    statusSummary.followUp3Sent
+  ].filter(Boolean).length;
   return {
     id: lead.id,
     name: lead.name || lead.full_name || '',
@@ -56,7 +64,11 @@ function leadToUser(lead, statusSummary = {}) {
     Status: lead.status || null,
     status: lead.status || null,
     clickCount: statusSummary.emailClicks || 0,
+    bookDemoClickCount: statusSummary.bookDemoClicks || 0,
+    videoClickCount: statusSummary.videoClicks || 0,
     whatsappClickCount: statusSummary.whatsappClicks || 0,
+    whatsappBookDemoClickCount: statusSummary.whatsappBookDemoClicks || 0,
+    whatsappVideoClickCount: statusSummary.whatsappVideoClicks || 0,
     whatsappStatus: statusSummary.whatsappStatus || null,
     unsubscribeStatus: Boolean(statusSummary.unsubscribed),
     isDeleted: Boolean(statusSummary.deleted),
@@ -65,6 +77,9 @@ function leadToUser(lead, statusSummary = {}) {
     lastEmailSentAt: statusSummary.lastEmailSentAt || null,
     followUp1Sent: Boolean(statusSummary.followUp1Sent),
     followUp2Sent: Boolean(statusSummary.followUp2Sent),
+    followUp3Sent: Boolean(statusSummary.followUp3Sent),
+    followUpCount,
+    followUpStatus: followUpCount > 0 ? `Follow-up ${followUpCount} Sent` : 'No Follow-up Sent',
     createdAt: lead.created_at,
     updatedAt: lead.updated_at,
     product_type: metadata.product_type || 'workflow_ai',
@@ -76,10 +91,7 @@ async function statusSummaryForLead(lead) {
   if (!lead) return {};
   const statuses = await prisma.lead_status.findMany({
     where: {
-      OR: [
-        { lead_id: lead.id },
-        ...(lead.email ? [{ email: lead.email }] : [])
-      ]
+      lead_id: lead.id
     },
     orderBy: { created_at: 'asc' }
   });
@@ -89,14 +101,39 @@ async function statusSummaryForLead(lead) {
   const initial = emailStatuses.find((row) => row.action === 'initial_sent');
   const latestEmail = emailStatuses[emailStatuses.length - 1];
   const latestWhatsApp = whatsappStatuses[whatsappStatuses.length - 1];
+  const postInitialEmailStatuses = initial
+    ? emailStatuses.filter((row) => row.created_at >= initial.created_at)
+    : [];
 
   return {
-    emailClicks: emailStatuses.reduce(
+    emailClicks: postInitialEmailStatuses.reduce(
+      (total, row) => total + Number(row.click_count || 0),
+      0
+    ),
+    bookDemoClicks: postInitialEmailStatuses.reduce(
+      (total, row) =>
+        row.action === 'demo_clicked'
+          ? total + Number(row.click_count || 0)
+          : total,
+      0
+    ),
+    videoClicks: postInitialEmailStatuses.filter((row) => row.action === 'video_clicked').length,
+    whatsappClicks: whatsappStatuses.reduce(
       (total, row) => total + Number(row.click_count || (row.clicked ? 1 : 0)),
       0
     ),
-    whatsappClicks: whatsappStatuses.reduce(
-      (total, row) => total + Number(row.click_count || (row.clicked ? 1 : 0)),
+    whatsappBookDemoClicks: whatsappStatuses.reduce(
+      (total, row) =>
+        row.action === 'demo_clicked'
+          ? total + Number(row.click_count || (row.clicked ? 1 : 0))
+          : total,
+      0
+    ),
+    whatsappVideoClicks: whatsappStatuses.reduce(
+      (total, row) =>
+        row.action === 'video_clicked'
+          ? total + Number(row.click_count || (row.clicked ? 1 : 0))
+          : total,
       0
     ),
     whatsappStatus: latestWhatsApp?.status || null,
@@ -110,7 +147,8 @@ async function statusSummaryForLead(lead) {
     initialEmailSent: Boolean(initial),
     lastEmailSentAt: latestEmail?.created_at || null,
     followUp1Sent: statuses.some((row) => row.action === 'follow_up_1_sent'),
-    followUp2Sent: statuses.some((row) => row.action === 'follow_up_2_sent')
+    followUp2Sent: statuses.some((row) => row.action === 'follow_up_2_sent'),
+    followUp3Sent: statuses.some((row) => row.action === 'follow_up_3_sent')
   };
 }
 
@@ -118,7 +156,8 @@ async function insertAutomationLog(action, message, lead = {}, level = 'info') {
   const EXCLUDED_LOG_ACTIONS = [
     'email_excel_uploaded',
     'email_initial_sent_lead_sync',
-    'email_poster_clicked_lead_sync'
+    'email_poster_clicked_lead_sync',
+    'email_demo_clicked_lead_sync'
   ];
 
   if (EXCLUDED_LOG_ACTIONS.includes(action)) {
@@ -187,8 +226,18 @@ async function upsertUnifiedLead(user, action = 'lead_upsert') {
 }
 
 async function updateUnifiedLeadStatus(user, channel, status, action, extra = {}) {
+  const existing = user?.email
+    ? await prisma.leads.findUnique({ where: { email: user.email } })
+    : null;
+  const isProtectedFollowUpStatus =
+    FOLLOW_UP_STOP_STATUSES.includes(existing?.status) &&
+    channel !== 'manual' &&
+    status !== 'follow_up_sent' &&
+    !['deleted', 'unsubscribed'].includes(status);
+  const nextStatus = isProtectedFollowUpStatus ? existing.status : status;
+
   const savedUser = await upsertUnifiedLead(
-    { ...user, status, Status: status },
+    { ...user, status: nextStatus, Status: nextStatus },
     `${channel}_${action}_lead_sync`
   );
   if (!savedUser?.email) return null;
@@ -200,17 +249,17 @@ async function updateUnifiedLeadStatus(user, channel, status, action, extra = {}
         email: savedUser.email,
         channel,
         action,
-        status,
+        status: nextStatus,
         clicked: Boolean(extra.clicked),
         click_count: Number(extra.clickCount || extra.whatsappClickCount || 0),
         metadata: extra,
         updated_at: new Date()
       }
     });
-    dbLog(`DB_INSERT_SUCCESS lead_status channel=${channel} status=${status}`);
+    dbLog(`DB_INSERT_SUCCESS lead_status channel=${channel} status=${nextStatus}`);
     await insertAutomationLog(
       `${channel}.${action}`,
-      `${channel} status ${status}: ${savedUser.email}`,
+      `${channel} status ${nextStatus}: ${savedUser.email}`,
       savedUser
     );
     return created;
@@ -268,12 +317,10 @@ async function getFollowUpLeads() {
     (user) =>
       !user.unsubscribeStatus &&
       !user.isDeleted &&
-      user.Status === 'sent' &&
-      user.whatsappStatus !== 'clicked' &&
-      user.clickCount === 0 &&
-      user.whatsappClickCount === 0 &&
+      FOLLOW_UP_ACTIVE_STATUSES.includes(user.Status) &&
+      !FOLLOW_UP_STOP_STATUSES.includes(user.Status) &&
       user.initialEmailSentAt &&
-      (!user.followUp1Sent || !user.followUp2Sent)
+      (!user.followUp1Sent || !user.followUp2Sent || !user.followUp3Sent)
   );
 }
 
@@ -331,26 +378,38 @@ async function resetCampaignLeads() {
 
 async function getUnifiedEmailDashboard() {
   const users = await getAllActiveLeads();
+  const sentUsers = users.filter((user) => user.initialEmailSent);
   return {
     total: users.length,
-    sent: users.filter((user) => ['sent', 'clicked'].includes(user.Status)).length,
-    clickedUsers: users.filter((user) => user.clickCount > 0).length,
-    totalClicks: users.reduce((total, user) => total + user.clickCount, 0)
+    sent: sentUsers.length,
+    clickedUsers: sentUsers.filter((user) => user.clickCount > 0).length,
+    totalClicks: sentUsers.reduce((total, user) => total + user.clickCount, 0)
   };
 }
 
 async function getUnifiedWhatsAppDashboard() {
   const users = await getAllActiveLeads();
+  const metaWebsiteClicks = Number(process.env.WHATSAPP_WEBSITE_CLICK_COUNT || 0);
+  const trackedClicks = users.reduce(
+    (total, user) => total + user.whatsappClickCount,
+    0
+  );
+
   return {
     totalLeads: users.length,
     whatsappSent: users.filter((user) =>
       ['sent', 'clicked'].includes(user.whatsappStatus)
     ).length,
     clickedUsers: users.filter((user) => user.whatsappClickCount > 0).length,
-    totalClicks: users.reduce(
-      (total, user) => total + user.whatsappClickCount,
+    bookDemoClicks: users.reduce(
+      (total, user) => total + user.whatsappBookDemoClickCount,
       0
     ),
+    videoClicks: users.reduce(
+      (total, user) => total + user.whatsappVideoClickCount,
+      0
+    ),
+    totalClicks: metaWebsiteClicks || trackedClicks,
     users
   };
 }
