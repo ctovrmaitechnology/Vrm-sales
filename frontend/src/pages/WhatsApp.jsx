@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../components/AppContext';
 
+const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
+const apiUrl = (path) => `${API_BASE_URL}${path}`;
+
 const WhatsApp = () => {
   const { searchQuery } = useApp();
   const [leads, setLeads] = useState([]);
@@ -13,12 +16,10 @@ const WhatsApp = () => {
     videoClicks: 0
   });
 
-  const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || 'https://sales.vrmaitechnology.com';
-
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const response = await fetch(`${BACKEND_BASE_URL}/api/whatsapp/dashboard`);
+        const response = await fetch(apiUrl('/api/whatsapp/dashboard'));
         if (response.ok) {
           const data = await response.json();
           setDashboardData({
@@ -109,59 +110,59 @@ const WhatsApp = () => {
                       return name.toLowerCase().includes(query) || phone.toLowerCase().includes(query);
                     })
                     .map((lead) => {
-                    const isSent = lead.whatsappStatus === 'sent' || lead.whatsappStatus === 'clicked';
-                    const isClicked = lead.whatsappStatus === 'clicked';
+                      const isSent = lead.whatsappStatus === 'sent' || lead.whatsappStatus === 'clicked';
+                      const isClicked = lead.whatsappStatus === 'clicked';
 
-                    return (
-                      <tr
-                        key={lead.id}
-                        className={isClicked ? 'wa-table-row-success' : 'wa-table-row-default'}
-                      >
-                        <td className="wa-text-primary">
-                          {lead.name}
-                        </td>
-                        <td className="wa-text-secondary">
-                          {lead.phoneNumber || lead.phone || "-"}
-                        </td>
-                        <td className="wa-text-center">
-                          {isSent ? (
-                            <span className="wa-badge wa-badge-blue">
-                              Sent
-                            </span>
-                          ) : (
-                            <span className="wa-badge wa-badge-gray">
-                              Not Sent
-                            </span>
-                          )}
-                        </td>
-                        <td className="wa-text-center">
-                          {isClicked ? (
-                            <span className="wa-badge wa-badge-green">
-                              Clicked
-                            </span>
-                          ) : (
-                            <span className="wa-badge wa-badge-red">
-                              Not Clicked
-                            </span>
-                          )}
-                        </td>
-                        <td className="wa-text-center wa-text-primary">
-                          {lead.whatsappBookDemoClickCount || 0}
-                        </td>
-                        <td className="wa-text-center wa-text-primary">
-                          {lead.whatsappVideoClickCount || 0}
-                        </td>
-                        <td className="wa-text-right">
-                          <button
-                            onClick={() => alert(`Delete ${lead.name}`)}
-                            className="wa-btn-danger"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
+                      return (
+                        <tr
+                          key={lead.id}
+                          className={isClicked ? 'wa-table-row-success' : 'wa-table-row-default'}
+                        >
+                          <td className="wa-text-primary">
+                            {lead.name}
+                          </td>
+                          <td className="wa-text-secondary">
+                            {lead.phoneNumber || lead.phone || "-"}
+                          </td>
+                          <td className="wa-text-center">
+                            {isSent ? (
+                              <span className="wa-badge wa-badge-blue">
+                                Sent
+                              </span>
+                            ) : (
+                              <span className="wa-badge wa-badge-gray">
+                                Not Sent
+                              </span>
+                            )}
+                          </td>
+                          <td className="wa-text-center">
+                            {isClicked ? (
+                              <span className="wa-badge wa-badge-green">
+                                Clicked
+                              </span>
+                            ) : (
+                              <span className="wa-badge wa-badge-red">
+                                Not Clicked
+                              </span>
+                            )}
+                          </td>
+                          <td className="wa-text-center wa-text-primary">
+                            {lead.whatsappBookDemoClickCount || 0}
+                          </td>
+                          <td className="wa-text-center wa-text-primary">
+                            {lead.whatsappVideoClickCount || 0}
+                          </td>
+                          <td className="wa-text-right">
+                            <button
+                              onClick={() => alert(`Delete ${lead.name}`)}
+                              className="wa-btn-danger"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                 ) : (
                   <tr>
                     <td colSpan="7" className="wa-text-center wa-text-secondary" style={{ padding: '3rem 1.5rem' }}>
