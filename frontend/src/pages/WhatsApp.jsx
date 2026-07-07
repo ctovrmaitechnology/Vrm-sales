@@ -13,7 +13,7 @@ const WhatsApp = () => {
     videoClicks: 0
   });
 
-  const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || 'http://localhost:5002';
+  const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || 'https://sales.vrmaitechnology.com';
 
   useEffect(() => {
     const fetchDashboardData = async () => {
