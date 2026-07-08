@@ -3,7 +3,7 @@
 //////////////////////////////////////////////////////
 
 async function loadCustomers() {
-  const res = await fetch("http://localhost:5001/api/ingestion/all");
+  const res = await fetch("http://localhost:5001/api/ingestion/email");
   const data = await res.json();
 
   renderTable(data);

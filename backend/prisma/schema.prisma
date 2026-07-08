@@ -51,3 +51,40 @@ model leads {
   updated_at      DateTime? @db.Timestamptz(6)
   country         String?
 }
+
+model EmailLeads {
+  id                 Int       @id @default(autoincrement())
+  name               String?
+  email              String?   @unique
+  phone              String?
+  company            String?
+  role               String?
+  source             String?
+  project            String?
+  status             String?
+  follow_up_count    Int       @default(0)
+  click_count        Int       @default(0)
+  demo_click_count   Int       @default(0)
+  video_click_count  Int       @default(0)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime? @db.Timestamptz(6)
+}
+
+model WhatsAppLeads {
+  id                 Int       @id @default(autoincrement())
+  name               String?
+  whatsapp_number    String?   @unique
+  email              String?
+  company            String?
+  role               String?
+  source             String?
+  project            String?
+  status             String?
+  whatsapp_status    String?
+  follow_up_count    Int       @default(0)
+  click_count        Int       @default(0)
+  demo_click_count   Int       @default(0)
+  video_click_count  Int       @default(0)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime? @db.Timestamptz(6)
+}

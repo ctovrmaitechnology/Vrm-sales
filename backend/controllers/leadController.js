@@ -1,16 +1,42 @@
 const fs = require('fs');
 const csv = require('csv-parser');
 const xlsx = require('xlsx');
-const { getLeadByEmail, upsertUnifiedLead, updateLeadFields, updateUnifiedLeadStatus, getAllActiveLeads } = require('../unifiedDb');
+const { getLeadByEmail, upsertUnifiedLead, updateLeadFields, updateUnifiedLeadStatus, getAllActiveLeads, upsertEmailLead, upsertWhatsAppLead, deleteUnifiedLead, getUnifiedLeadByIdentifier } = require('../unifiedDb');
 const { findProductColumn, normalizeLeadProduct } = require('../utils/helpers');
 
 async function getAllLeads(req, res) {
   try {
     res.json(await getAllActiveLeads());
   } catch (err) {
-    console.error("Failed to fetch unified email leads:", err.message);
+    console.error("Failed to fetch unified leads:", err.message);
     res.status(500).json({
       error: "Failed to fetch customers"
+    });
+  }
+}
+
+async function getWhatsAppLeads(req, res) {
+  try {
+    const allLeads = await getAllActiveLeads();
+    const whatsappLeads = allLeads.filter(lead => lead.isWhatsAppLead);
+    res.json(whatsappLeads);
+  } catch (err) {
+    console.error("Failed to fetch WhatsApp leads:", err.message);
+    res.status(500).json({
+      error: "Failed to fetch WhatsApp leads"
+    });
+  }
+}
+
+async function getEmailLeads(req, res) {
+  try {
+    const allLeads = await getAllActiveLeads();
+    const emailLeads = allLeads.filter(lead => lead.isEmailLead);
+    res.json(emailLeads);
+  } catch (err) {
+    console.error("Failed to fetch Email leads:", err.message);
+    res.status(500).json({
+      error: "Failed to fetch Email leads"
     });
   }
 }
@@ -50,25 +76,21 @@ async function updateStatus(req, res) {
 }
 
 async function deleteLead(req, res) {
-  const email = req.params.email;
+  const identifier = req.body.identifier;
 
   try {
-    const deletedLead = await getLeadByEmail(email);
+    const deleted = await deleteUnifiedLead(identifier);
 
-    if (!deletedLead) {
+    if (!deleted) {
       return res.status(404).json({
         error: "Lead not found"
       });
     }
 
-    await updateUnifiedLeadStatus(deletedLead, "email", "deleted", "lead_deleted", {
-      source: "deleted"
-    });
-
     res.json({
       success: true,
       message: "Lead deleted successfully",
-      lead: deletedLead
+      identifier
     });
 
   } catch (error) {
@@ -87,12 +109,35 @@ async function deleteLead(req, res) {
 async function saveLeads(results, filePath, res) {
   let added = 0;
   let skipped = 0;
-  const uploadBatchId = `email-upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const uploadedAt = new Date().toISOString();
 
   for (let user of results) {
     try {
-      const existing = await getLeadByEmail(user.email);
+      const existing = await getUnifiedLeadByIdentifier(user.email || user.phone);
+      const isDeleted = existing && (existing.status === 'deleted' || existing.Status === 'deleted' || existing.status === 'lead_deleted');
+      const isNew = !existing || isDeleted;
+      const targetStatus = isDeleted ? "new" : (existing?.Status || existing?.status || "new");
+
+      if (user.email) {
+         await upsertEmailLead({
+           name: user.name,
+           email: user.email,
+           phone: user.phone,
+           project: user.product_type || 'workflow_ai',
+           source: "File Upload",
+           status: targetStatus
+         }, "email_excel_uploaded");
+      }
+
+      if (user.phone) {
+         await upsertWhatsAppLead({
+           name: user.name,
+           email: user.email,
+           phone: user.phone,
+           project: user.product_type || 'workflow_ai',
+           source: "File Upload",
+           status: targetStatus
+         }, "whatsapp_excel_uploaded");
+      }
 
       await upsertUnifiedLead({
         name: user.name,
@@ -100,16 +145,13 @@ async function saveLeads(results, filePath, res) {
         phoneNumber: user.phone,
         product_type: user.product_type || 'workflow_ai',
         metadata: {
-          product_type: user.product_type || 'workflow_ai',
-          email_campaign_uploaded: true,
-          email_campaign_uploaded_at: uploadedAt,
-          email_upload_batch_id: uploadBatchId
+          product_type: user.product_type || 'workflow_ai'
         },
         source: "File Upload",
-        Status: existing?.Status || existing?.status || "new"
-      }, "email_excel_uploaded");
+        Status: targetStatus
+      }, "excel_uploaded");
 
-      if (existing) {
+      if (!isNew) {
         skipped++;
       } else {
         added++;
@@ -119,11 +161,12 @@ async function saveLeads(results, filePath, res) {
     }
   }
 
-  fs.unlinkSync(filePath);
+  if (filePath) {
+    fs.unlinkSync(filePath);
+  }
 
   return res.json({
     message: `Added ${added} new leads. Updated ${skipped} existing leads. This upload batch contains ${results.length} campaign leads.`,
-    uploadBatchId,
     campaignLeadCount: results.length
   });
 }
@@ -177,7 +220,7 @@ async function uploadLeads(req, res) {
           const phone =
             phoneKey ? String(data[phoneKey]).trim() : "";
 
-          if (email) {
+          if (email || phone) {
             results.push({
               name,
               email,
@@ -242,7 +285,7 @@ async function uploadLeads(req, res) {
         const phone =
           phoneKey ? String(data[phoneKey]).trim() : "";
 
-        if (email) {
+        if (email || phone) {
           results.push({
             name,
             email,
@@ -273,9 +316,59 @@ async function uploadLeads(req, res) {
   }
 }
 
+async function uploadSingleLead(req, res) {
+  try {
+    const data = req.body;
+    
+    if (!data || (!data.email && !data.phone)) {
+      return res.status(400).json({ error: "Email or phone number is required." });
+    }
+
+    const results = [{
+      name: data.name || data.full_name || "",
+      email: data.email || "",
+      phone: data.phone || data.phone_number || data.whatsapp_number || "",
+      product_type: normalizeLeadProduct(data.project || data.product_type || data.product || "")
+    }];
+
+    // Using the same logic as CSV but without a file
+    const fakeRes = {
+      json: (data) => data
+    };
+    
+    const responseData = await saveLeads(results, null, fakeRes);
+
+    if (data.sendImmediately) {
+      const { sendInitialEmail } = require('../services/emailService');
+      const { sendWhatsAppTemplate } = require('../services/whatsappService');
+      
+      const lead = results[0];
+      try {
+        if (lead.email) {
+          await sendInitialEmail(lead, lead.product_type);
+        }
+        if (lead.phone) {
+          await sendWhatsAppTemplate(lead, lead.product_type);
+        }
+      } catch (sendErr) {
+        console.error("Error sending immediate campaign to single lead:", sendErr.message);
+      }
+    }
+
+    return res.json(responseData);
+
+  } catch (err) {
+    console.error("Single lead upload error:", err.message);
+    res.status(500).json({ error: "Failed to save and send to lead" });
+  }
+}
+
 module.exports = {
   getAllLeads,
+  getWhatsAppLeads,
+  getEmailLeads,
   updateStatus,
   deleteLead,
-  uploadLeads
+  uploadLeads,
+  uploadSingleLead
 };

@@ -17,8 +17,8 @@ const LEAD_STATUS_LABELS = {
 const getLeadStatusLabel = (status) => LEAD_STATUS_LABELS[status] || 'Not Sent';
 
 const getFollowUpStatusLabel = (lead) => {
-  const count = lead.followUpCount || [lead.followUp1Sent, lead.followUp2Sent, lead.followUp3Sent].filter(Boolean).length;
-  if (count >= 3 || lead.Status === 'follow_up_sent') return 'Follow-up 3 Sent';
+  const count = lead.followUpCount || 0;
+  if (count >= 3 || lead.status === 'follow_up_sent') return 'Follow-up 3 Sent';
   if (count === 2) return 'Follow-up 2 Sent';
   if (count === 1) return 'Follow-up 1 Sent';
   return 'No Follow-up Sent';
@@ -44,6 +44,10 @@ export default function Dashboard() {
   const [sendingEmails, setSendingEmails] = useState(false);
   const [checkingFollowUps, setCheckingFollowUps] = useState(false);
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
+  const [addLeadModalOpen, setAddLeadModalOpen] = useState(false);
+  const [singleLead, setSingleLead] = useState({ name: '', email: '', phone: '', product_type: 'workflow_ai' });
+  const [singleStatus, setSingleStatus] = useState('');
+  const [singleLoading, setSingleLoading] = useState(false);
   const [campaignProduct, setCampaignProduct] = useState(DEFAULT_PRODUCT);
   const fileInputRef = useRef(null);
   const [loading, setLoading] = useState(false);
@@ -58,45 +62,18 @@ export default function Dashboard() {
 
       console.log("REFRESH STARTED");
 
-      // DASHBOARD DATA
-      const dashRes =
-        await fetch(apiUrl('/api/dashboard'));
-
-      console.log("Dashboard Status:", dashRes.status);
-
-      const dashData = await dashRes.json();
-      console.log("Dashboard Data:", dashData);
-      console.log("BEFORE LEADS FETCH");
+      const leadsRes = await fetch(apiUrl('/api/ingestion/email'));
+      const leadsData = await leadsRes.json();
+      
+      const leadsArray = leadsData || [];
+      setLeads(leadsArray);
 
       setDashboardData({
-        total: dashData.total || 0,
-        sent: dashData.sent || 0,
-        clickedUsers: dashData.clickedUsers || 0,
-        totalClicks: dashData.totalClicks || 0
+        total: leadsArray.length,
+        sent: leadsArray.filter(l => ['sent', 'clicked', 'converted_to_lead', 'follow_up_sent'].includes(l.status)).length,
+        clickedUsers: leadsArray.filter(l => l.status === 'clicked').length,
+        totalClicks: leadsArray.reduce((sum, l) => sum + (l.clickCount || 0), 0)
       });
-
-      // LEADS DATA
-      const leadsRes =
-        await fetch(apiUrl('/api/ingestion/all'));
-
-      console.log("Leads Status:", leadsRes.status);
-
-      const leadsData =
-        await leadsRes.json();
-
-      console.log("Leads Data:", leadsData);
-
-      console.log(
-        "Is Array:",
-        Array.isArray(leadsData)
-      );
-
-      console.log(
-        "Array Length:",
-        leadsData.length
-      );
-
-      setLeads(leadsData || []);
 
     } catch (error) {
 
@@ -174,8 +151,12 @@ export default function Dashboard() {
     if (!window.confirm(`Are you sure you want to delete lead: ${email}?`)) return;
 
     try {
-      const response = await fetch(apiUrl(`/api/lead/${encodeURIComponent(email)}`), {
-        method: 'DELETE'
+      const response = await fetch(apiUrl(`/api/delete`), {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ identifier: email })
       });
 
       if (response.ok) {
@@ -191,7 +172,7 @@ export default function Dashboard() {
   };
 
   const updateLeadStatus = async (lead, status) => {
-    if (status !== 'converted_to_lead' || lead.Status === status) return;
+    if (status !== 'converted_to_lead' || lead.status === status) return;
 
     try {
       const response = await fetch(apiUrl(`/api/lead/${encodeURIComponent(lead.email)}/status`), {
@@ -294,6 +275,49 @@ export default function Dashboard() {
     setCurrentPage(page);
   };
 
+  const handleSingleSubmit = async (e) => {
+    e.preventDefault();
+    if (!singleLead.email && !singleLead.phone) {
+      setSingleStatus('❌ Email or Phone is required');
+      return;
+    }
+
+    setSingleLoading(true);
+    setSingleStatus('Sending Campaign... ⏳');
+
+    try {
+      const payload = {
+        ...singleLead,
+        sendImmediately: true
+      };
+
+      const res = await fetch(apiUrl('/api/upload-lead-json'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setSingleStatus(`✅ Success! Campaign sent.`);
+        setTimeout(() => {
+          setAddLeadModalOpen(false);
+          setSingleStatus('');
+          setSingleLead({ name: '', email: '', phone: '', product_type: 'workflow_ai' });
+          refreshData(); // Refresh the table
+        }, 1500);
+      } else {
+        setSingleStatus(`❌ Failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Submit error:', err);
+      setSingleStatus('❌ Submit Failed');
+    } finally {
+      setSingleLoading(false);
+    }
+  };
+
  
   // ==========================================
   // RENDER MAIN DASHBOARD
@@ -313,6 +337,14 @@ export default function Dashboard() {
             onChange={handleFileUpload}
             style={{ display: 'none' }}
           />
+          <button
+            onClick={() => setAddLeadModalOpen(true)}
+            disabled={uploading}
+            className="btn btn-secondary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#10b981', color: 'white', borderColor: '#10b981' }}
+          >
+            + Add Lead
+          </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
@@ -380,6 +412,74 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {addLeadModalOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.35)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem',
+        }}>
+          <div className="dashboard-section" style={{ width: '100%', maxWidth: 420, margin: 0 }}>
+            <h2 className="section-title">Add Lead & Send Campaign</h2>
+            <form onSubmit={handleSingleSubmit}>
+              <div className="form-group">
+                <label className="form-label">Name</label>
+                <input
+                  type="text"
+                  value={singleLead.name}
+                  onChange={e => setSingleLead({...singleLead, name: e.target.value})}
+                  className="form-control"
+                  placeholder="John Doe"
+                />
+              </div>
+              <div className="form-group mt-3">
+                <label className="form-label">Email</label>
+                <input
+                  type="email"
+                  value={singleLead.email}
+                  onChange={e => setSingleLead({...singleLead, email: e.target.value})}
+                  className="form-control"
+                  placeholder="john@example.com"
+                />
+              </div>
+              <div className="form-group mt-3">
+                <label className="form-label">WhatsApp Number</label>
+                <input
+                  type="text"
+                  value={singleLead.phone}
+                  onChange={e => setSingleLead({...singleLead, phone: e.target.value})}
+                  className="form-control"
+                  placeholder="6382108701"
+                />
+              </div>
+              <div className="form-group mt-3">
+                <label className="form-label">Product</label>
+                <select className="form-control" value={singleLead.product_type} onChange={e => setSingleLead({...singleLead, product_type: e.target.value})}>
+                  {PRODUCTS.map((product) => <option key={product.value} value={product.value}>{product.label}</option>)}
+                </select>
+              </div>
+
+              {singleStatus && (
+                <div className="mt-3 p-2 text-center" style={{ color: singleStatus.includes('❌') ? 'red' : 'green', fontSize: '14px', fontWeight: 'bold' }}>
+                  {singleStatus}
+                </div>
+              )}
+
+              <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setAddLeadModalOpen(false)} disabled={singleLoading}>Cancel</button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
+                  disabled={singleLoading || (!singleLead.email && !singleLead.phone)}
+                >
+                  {singleLoading ? 'Sending...' : 'Send Campaign'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
 
       <div className="wa-container" style={{ padding: 0, maxWidth: 'none' }}>
         {/* TAB NAVIGATION */}
@@ -483,14 +583,14 @@ export default function Dashboard() {
                         return name.toLowerCase().includes(query) || email.toLowerCase().includes(query);
                       })
                       .map((lead, index) => {
-                      const isSent = ['sent', 'clicked', 'converted_to_lead', 'follow_up_sent'].includes(lead.Status);
-                      const isClicked = lead.Status === 'clicked';
+                      const isSent = ['sent', 'clicked', 'converted_to_lead', 'follow_up_sent'].includes(lead.status);
+                      const isClicked = lead.status === 'clicked';
                       const bookDemoClickCount = lead.bookDemoClickCount || 0;
                       const videoClickCount = lead.videoClickCount || 0;
-                      const canConvert = lead.Status === 'sent' || lead.Status === 'clicked';
+                      const canConvert = lead.status === 'sent' || lead.status === 'clicked';
                       const followUpStatus = getFollowUpStatusLabel(lead);
                       const followUpComplete = followUpStatus === 'Follow-up 3 Sent';
-                      const leadStatusValue = followUpComplete ? 'follow_up_sent' : (lead.Status || 'new');
+                      const leadStatusValue = followUpComplete ? 'follow_up_sent' : (lead.status || 'new');
 
                       return (
                         <tr

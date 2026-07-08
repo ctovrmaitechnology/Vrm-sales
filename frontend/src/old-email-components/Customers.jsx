@@ -15,7 +15,7 @@ export default function Customers() {
   const loadCustomers = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5002/api/ingestion/all');
+      const res = await fetch('http://localhost:5002/api/ingestion/email');
       const data = await res.json();
       setCustomers(data || []);
       setFilteredCustomers(data || []);

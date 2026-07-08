@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { getFollowUpLeads, getLeadByEmail, updateUnifiedLeadStatus } = require('../unifiedDb');
+const { getFollowUpLeads, getLeadByEmail, updateEmailLeadStatus, updateUnifiedLeadStatus } = require('../unifiedDb');
 const { sendFollowUp1, sendFollowUp2, sendFollowUp3 } = require('./emailService');
 
 let lastFollowUpDbWarningAt = 0;
@@ -103,28 +103,33 @@ async function runFollowUpEmailCheck() {
 
         if (sendFollowUp === "1") {
           brevoResult = await sendFollowUp1(user);
-          await updateUnifiedLeadStatus(user, "email", "sent", "follow_up_1_sent", {
-            followUp1Sent: true,
-            lastEmailSentAt: new Date()
-          });
+          if (user.isEmailLead) {
+             await updateEmailLeadStatus(user.email, "sent", "follow_up_1_sent");
+          } else {
+             await updateUnifiedLeadStatus(user, "email", "sent", "follow_up_1_sent", { followUp1Sent: true, lastEmailSentAt: new Date() });
+          }
         } else if (sendFollowUp === "2") {
           brevoResult = await sendFollowUp2(user);
-          await updateUnifiedLeadStatus(user, "email", "sent", "follow_up_2_sent", {
-            followUp2Sent: true,
-            lastEmailSentAt: new Date()
-          });
+          if (user.isEmailLead) {
+             await updateEmailLeadStatus(user.email, "sent", "follow_up_2_sent");
+          } else {
+             await updateUnifiedLeadStatus(user, "email", "sent", "follow_up_2_sent", { followUp2Sent: true, lastEmailSentAt: new Date() });
+          }
         } else if (sendFollowUp === "3") {
           brevoResult = await sendFollowUp3(user);
-          await updateUnifiedLeadStatus(user, "email", "sent", "follow_up_3_sent", {
-            followUp3Sent: true,
-            lastEmailSentAt: new Date()
-          });
+          if (user.isEmailLead) {
+             await updateEmailLeadStatus(user.email, "sent", "follow_up_3_sent");
+          } else {
+             await updateUnifiedLeadStatus(user, "email", "sent", "follow_up_3_sent", { followUp3Sent: true, lastEmailSentAt: new Date() });
+          }
 
           const latestLead = await getLeadByEmail(user.email);
           if (latestLead && ['sent', 'clicked'].includes(latestLead.Status)) {
-            await updateUnifiedLeadStatus(latestLead, "email", "follow_up_sent", "follow_up_completed", {
-              followUpCompleted: true
-            });
+            if (user.isEmailLead) {
+               await updateEmailLeadStatus(user.email, "follow_up_sent", "follow_up_completed");
+            } else {
+               await updateUnifiedLeadStatus(latestLead, "email", "follow_up_sent", "follow_up_completed", { followUpCompleted: true });
+            }
           }
         }
 

@@ -2,7 +2,7 @@ const axios = require('axios');
 const { getCampaign } = require('../productCampaigns');
 const { getFirstName, isWhatsAppEnabled, logWhatsAppDisabled } = require('../utils/helpers');
 const { encodeLeadRef } = require('./trackingService');
-const { updateUnifiedLeadStatus } = require('../unifiedDb');
+const { updateWhatsAppLeadStatus } = require('../unifiedDb');
 
 async function sendWhatsAppTemplate(user, industry, product) {
   if (!isWhatsAppEnabled()) {
@@ -54,11 +54,14 @@ async function sendWhatsAppTemplate(user, industry, product) {
     cleanPhone = '91' + cleanPhone;
   }
 
+  const BACKEND_URL = process.env.BACKEND_BASE_URL || 'http://localhost:5002';
+  const fullDemoLink = `${BACKEND_URL}/api/book-demo?ref=${demoRef}&kind=demo`;
+
   const components = [
     {
       type: "body",
       parameters: [
-        { type: "text", text: firstName }
+        { type: "text", text: String(user.name || "there").split(' ')[0] }
       ]
     }
   ];
@@ -70,7 +73,7 @@ async function sendWhatsAppTemplate(user, industry, product) {
         sub_type: "url",
         index,
         parameters: [
-          { type: "text", text: demoRef }
+          { type: "text", text: "&id=" + demoRef }
         ]
       });
     });
@@ -102,7 +105,7 @@ async function sendWhatsAppTemplate(user, industry, product) {
       }
     });
 
-    await updateUnifiedLeadStatus(user, "whatsapp", "sent", "template_sent", {
+    await updateWhatsAppLeadStatus(phone, "sent", "template_sent", {
       whatsappStatus: "sent"
     });
 

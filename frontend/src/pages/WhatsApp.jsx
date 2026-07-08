@@ -16,28 +16,63 @@ const WhatsApp = () => {
     videoClicks: 0
   });
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const response = await fetch(apiUrl('/api/whatsapp/dashboard'));
-        if (response.ok) {
-          const data = await response.json();
-          setDashboardData({
-            totalLeads: data.totalLeads || 0,
-            whatsappSent: data.whatsappSent || 0,
-            clickedUsers: data.clickedUsers || 0,
-            totalClicks: data.totalClicks || 0,
-            bookDemoClicks: data.bookDemoClicks || 0,
-            videoClicks: data.videoClicks || 0
-          });
-          setLeads(data.users || []);
-        }
-      } catch (error) {
-        console.error("Failed to fetch WhatsApp dashboard data:", error);
+  const fetchDashboardData = async () => {
+    try {
+      const url = apiUrl('/api/ingestion/whatsapp');
+      console.log('Fetching:', url); // temporary — confirm the actual URL being hit
+      const response = await fetch(url);
+      if (response.ok) {
+        const users = await response.json();
+        setDashboardData({
+          totalLeads: users.length,
+          whatsappSent: users.filter(u => u.status === 'sent' || u.status === 'clicked' || u.whatsappStatus === 'sent' || u.whatsappStatus === 'clicked').length,
+          clickedUsers: users.filter(u => u.status === 'clicked' || u.whatsappStatus === 'clicked').length,
+          totalClicks: users.reduce((sum, u) => sum + (u.clickCount || u.whatsappClickCount || 0), 0),
+          bookDemoClicks: users.reduce((sum, u) => sum + (u.bookDemoClickCount || u.whatsappBookDemoClickCount || 0), 0),
+          videoClicks: users.reduce((sum, u) => sum + (u.videoClickCount || u.whatsappVideoClickCount || 0), 0)
+        });
+        setLeads(users);
+      } else {
+        console.error('Dashboard fetch failed with status:', response.status, await response.text());
       }
-    };
+    } catch (error) {
+      console.error("Failed to fetch WhatsApp dashboard data:", error);
+    }
+  };
+
+  useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  const deleteLead = async (lead) => {
+    const identifier = lead.email || lead.phoneNumber || lead.phone || lead.whatsappNumber;
+    if (!identifier) {
+      alert("Cannot delete this lead (missing email or phone).");
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete ${lead.name || identifier}?`)) return;
+
+    try {
+      const response = await fetch(apiUrl(`/api/delete`), {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ identifier })
+      });
+
+      if (response.ok) {
+        fetchDashboardData();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to delete lead.');
+      }
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert('An error occurred while deleting the lead.');
+    }
+  };
 
   return (
     <div className="wa-dashboard">
@@ -154,7 +189,7 @@ const WhatsApp = () => {
                           </td>
                           <td className="wa-text-right">
                             <button
-                              onClick={() => alert(`Delete ${lead.name}`)}
+                              onClick={() => deleteLead(lead)}
                               className="wa-btn-danger"
                             >
                               Delete

@@ -6,7 +6,5 @@ import './styles/global.css';
 import './old-email-components/index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
+  <App />
 );

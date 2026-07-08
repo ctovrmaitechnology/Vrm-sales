@@ -1,7 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { isValidProduct, resolveProduct } = require('../productCampaigns');
-const { getCampaignLeads, updateUnifiedLeadStatus } = require('../unifiedDb');
+const { getCampaignLeads, updateUnifiedLeadStatus, updateEmailLeadStatus } = require('../unifiedDb');
 const { sendInitialEmail } = require('../services/emailService');
 const { sendWhatsAppTemplate } = require('../services/whatsappService');
 const { detectIndustry, delay, isWhatsAppEnabled, logWhatsAppDisabled, normalizeLeadProduct } = require('../utils/helpers');
@@ -71,12 +71,8 @@ async function startCampaign(req, res) {
                 console.log(`Unexpected WhatsApp flow error for ${user.email}:`, waErr.message);
               }
 
-              if (user.Status !== "clicked") {
-                await updateUnifiedLeadStatus(user, "email", "sent", "initial_sent", {
-                  Status: "sent",
-                  lastEmailSentAt: new Date(),
-                  initialEmailSentAt: new Date()
-                });
+              if (user.status !== "clicked") {
+                await updateEmailLeadStatus(user.email, "sent", "initial_sent");
               }
 
             } catch (error) {
@@ -142,7 +138,7 @@ async function unsubscribe(req, res) {
         unsubscribeStatus: true
       }
     });
-    await updateUnifiedLeadStatus({ email }, "email", "unsubscribed", "unsubscribe", {
+    await updateEmailLeadStatus(email, "unsubscribed", "unsubscribe", {
       unsubscribeStatus: true
     });
 

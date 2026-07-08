@@ -44,7 +44,9 @@ function renderButton(href, label, backgroundColor) {
     <table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 16px; margin-top: 20px;">
       <tr>
         <td bgcolor="${backgroundColor}" style="border-radius: 4px;">
-          <a href="${escapeHtml(href)}" target="_blank" style="background-color: ${backgroundColor}; border: 1px solid ${backgroundColor}; border-radius: 4px; color: #ffffff; display: inline-block; font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; line-height: 20px; padding: 10px 18px; text-decoration: none;">${escapeHtml(label)}</a>
+          <a href="${escapeHtml(href)}" target="_blank" style="background-color: ${backgroundColor}; border: 1px solid ${backgroundColor}; border-radius: 4px; color: #ffffff; display: inline-block; font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; line-height: 20px; padding: 10px 18px; text-decoration: none;">
+            ${escapeHtml(label)}
+          </a>
         </td>
       </tr>
     </table>
