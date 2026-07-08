@@ -1,7 +1,7 @@
 const fs = require('fs');
 const csv = require('csv-parser');
 const xlsx = require('xlsx');
-const { getLeadByEmail, upsertUnifiedLead, updateLeadFields, updateUnifiedLeadStatus, getAllActiveLeads, upsertEmailLead, upsertWhatsAppLead, deleteUnifiedLead, getUnifiedLeadByIdentifier } = require('../unifiedDb');
+const { getLeadByEmail, upsertUnifiedLead, updateLeadFields, updateUnifiedLeadStatus, getAllActiveLeads, upsertEmailLead, upsertWhatsAppLead, deleteUnifiedLead, getUnifiedLeadByIdentifier, updateEmailLeadStatus } = require('../unifiedDb');
 const { findProductColumn, normalizeLeadProduct } = require('../utils/helpers');
 
 async function getAllLeads(req, res) {
@@ -346,6 +346,7 @@ async function uploadSingleLead(req, res) {
       try {
         if (lead.email) {
           await sendInitialEmail(lead, lead.product_type);
+          await updateEmailLeadStatus(lead.email, "sent", "initial_sent");
         }
         if (lead.phone) {
           await sendWhatsAppTemplate(lead, lead.product_type);
