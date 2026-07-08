@@ -14,6 +14,9 @@ const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 5002;
 
+// Required for express-rate-limit when running behind a reverse proxy (e.g., Nginx)
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
