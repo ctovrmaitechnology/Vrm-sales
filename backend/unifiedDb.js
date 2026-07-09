@@ -358,30 +358,63 @@ async function updateLeadFields(email, fields = {}) {
   if (!existing) return null;
 
   const data = { updated_at: new Date() };
-  if ('name' in fields) {
+
+  if ("name" in fields) {
     data.name = fields.name;
     data.full_name = fields.name;
   }
-  if ('phoneNumber' in fields || 'phone' in fields) {
-    data.phone_number = fields.phoneNumber || fields.phone || '';
+
+  if ("phoneNumber" in fields || "phone" in fields) {
+    data.phone_number = fields.phoneNumber || fields.phone || "";
   }
-  if ('whatsappNumber' in fields) data.whatsapp_number = fields.whatsappNumber;
-  if ('company' in fields) data.company = fields.company;
-  if ('jobTitle' in fields || 'role' in fields) {
+
+  if ("whatsappNumber" in fields) {
+    data.whatsapp_number = fields.whatsappNumber;
+  }
+
+  if ("company" in fields) {
+    data.company = fields.company;
+  }
+
+  if ("jobTitle" in fields || "role" in fields) {
     data.role = fields.jobTitle || fields.role;
   }
-  if ('source' in fields) data.source = fields.source;
-  if ('Status' in fields || 'status' in fields) {
+
+  if ("source" in fields) {
+    data.source = fields.source;
+  }
+
+  if ("Status" in fields || "status" in fields) {
     data.status = fields.Status || fields.status;
   }
 
+  // Update legacy leads table
   const updated = await prisma.leads.update({
     where: { email },
     data
   });
-  return leadToUser(updated, statusSummaryForLead(updated, await prisma.lead_status.findMany({ where: { lead_id: updated.id } })));
-}
 
+  // Sync EmailLeads only
+  if ("Status" in fields || "status" in fields) {
+    await prisma.emailLeads.updateMany({
+      where: { email },
+      data: {
+        status: fields.Status || fields.status,
+        updated_at: new Date()
+      }
+    });
+  }
+
+  return leadToUser(
+    updated,
+    statusSummaryForLead(
+      updated,
+      await prisma.lead_status.findMany({
+        where: { lead_id: updated.id }
+      })
+    )
+  );
+}
 async function resetCampaignLeads() {
   await prisma.leads.updateMany({
     data: {
