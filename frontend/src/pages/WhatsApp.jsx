@@ -7,6 +7,7 @@ const apiUrl = (path) => `${API_BASE_URL}${path}`;
 const WhatsApp = () => {
   const { searchQuery } = useApp();
   const [leads, setLeads] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [dashboardData, setDashboardData] = useState({
     totalLeads: 0,
     whatsappSent: 0,
@@ -73,6 +74,35 @@ const WhatsApp = () => {
       alert('An error occurred while deleting the lead.');
     }
   };
+  const filteredLeads = leads.filter((lead) => {
+  const search = searchTerm.trim().toLowerCase();
+
+  if (!search) return true;
+
+  const isSent =
+    lead.whatsappStatus === "sent" ||
+    lead.whatsappStatus === "clicked";
+
+  const isClicked =
+    lead.whatsappStatus === "clicked";
+
+  return [
+    lead.name,
+    lead.phone,
+    lead.phoneNumber,
+    lead.whatsappStatus,
+
+    isSent ? "sent" : "not sent",
+    isClicked ? "clicked" : "not clicked",
+
+    lead.bookDemoClickCount,
+    lead.videoClickCount,
+  ]
+    .filter(Boolean)
+    .some((value) =>
+      value.toString().toLowerCase().includes(search)
+    );
+});
 
   return (
     <div className="wa-dashboard">
@@ -82,7 +112,26 @@ const WhatsApp = () => {
           WhatsApp Overview
         </h1>
       </header>
-
+      <div style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        marginBottom: "20px"
+      }}>
+        <input
+          type="text"
+          placeholder="Search WhatsApp leads..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{
+            width: "320px",
+            padding: "10px 14px",
+            border: "1px solid #d1d5db",
+            borderRadius: "8px",
+            fontSize: "14px",
+            margin: "25px 0 0px 0"
+          }}
+        />
+      </div>
       <div className="wa-container">
         {/* OVERVIEW CARDS */}
         <div className="wa-cards-grid">
@@ -135,69 +184,61 @@ const WhatsApp = () => {
                 </tr>
               </thead>
               <tbody>
-                {leads.length > 0 ? (
-                  leads
-                    .filter(lead => {
-                      if (!searchQuery) return true;
-                      const name = lead.name || '';
-                      const phone = lead.phoneNumber || lead.phone || '';
-                      const query = searchQuery.toLowerCase();
-                      return name.toLowerCase().includes(query) || phone.toLowerCase().includes(query);
-                    })
-                    .map((lead) => {
-                      const isSent = lead.whatsappStatus === 'sent' || lead.whatsappStatus === 'clicked';
-                      const isClicked = lead.whatsappStatus === 'clicked';
+                {filteredLeads.length > 0 ? (
+                  filteredLeads.map((lead) => {
+                    const isSent = lead.whatsappStatus === 'sent' || lead.whatsappStatus === 'clicked';
+                    const isClicked = lead.whatsappStatus === 'clicked';
 
-                      return (
-                        <tr
-                          key={lead.id}
-                          className={isClicked ? 'wa-table-row-success' : 'wa-table-row-default'}
-                        >
-                          <td className="wa-text-primary">
-                            {lead.name}
-                          </td>
-                          <td className="wa-text-secondary">
-                            {lead.phoneNumber || lead.phone || "-"}
-                          </td>
-                          <td className="wa-text-center">
-                            {isSent ? (
-                              <span className="wa-badge wa-badge-blue">
-                                Sent
-                              </span>
-                            ) : (
-                              <span className="wa-badge wa-badge-gray">
-                                Not Sent
-                              </span>
-                            )}
-                          </td>
-                          <td className="wa-text-center">
-                            {isClicked ? (
-                              <span className="wa-badge wa-badge-green">
-                                Clicked
-                              </span>
-                            ) : (
-                              <span className="wa-badge wa-badge-red">
-                                Not Clicked
-                              </span>
-                            )}
-                          </td>
-                          <td className="wa-text-center wa-text-primary">
-                            {lead.whatsappBookDemoClickCount || 0}
-                          </td>
-                          <td className="wa-text-center wa-text-primary">
-                            {lead.whatsappVideoClickCount || 0}
-                          </td>
-                          <td className="wa-text-right">
-                            <button
-                              onClick={() => deleteLead(lead)}
-                              className="wa-btn-danger"
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
+                    return (
+                      <tr
+                        key={lead.id}
+                        className={isClicked ? 'wa-table-row-success' : 'wa-table-row-default'}
+                      >
+                        <td className="wa-text-primary">
+                          {lead.name}
+                        </td>
+                        <td className="wa-text-secondary">
+                          {lead.phoneNumber || lead.phone || "-"}
+                        </td>
+                        <td className="wa-text-center">
+                          {isSent ? (
+                            <span className="wa-badge wa-badge-blue">
+                              Sent
+                            </span>
+                          ) : (
+                            <span className="wa-badge wa-badge-gray">
+                              Not Sent
+                            </span>
+                          )}
+                        </td>
+                        <td className="wa-text-center">
+                          {isClicked ? (
+                            <span className="wa-badge wa-badge-green">
+                              Clicked
+                            </span>
+                          ) : (
+                            <span className="wa-badge wa-badge-red">
+                              Not Clicked
+                            </span>
+                          )}
+                        </td>
+                        <td className="wa-text-center wa-text-primary">
+                          {lead.whatsappBookDemoClickCount || 0}
+                        </td>
+                        <td className="wa-text-center wa-text-primary">
+                          {lead.whatsappVideoClickCount || 0}
+                        </td>
+                        <td className="wa-text-right">
+                          <button
+                            onClick={() => deleteLead(lead)}
+                            className="wa-btn-danger"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
                     <td colSpan="7" className="wa-text-center wa-text-secondary" style={{ padding: '3rem 1.5rem' }}>

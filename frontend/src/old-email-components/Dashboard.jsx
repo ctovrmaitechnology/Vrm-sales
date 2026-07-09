@@ -40,6 +40,7 @@ export default function Dashboard() {
     totalClicks: 0
   });
   const [leads, setLeads] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [uploading, setUploading] = useState(false);
   const [sendingEmails, setSendingEmails] = useState(false);
   const [checkingFollowUps, setCheckingFollowUps] = useState(false);
@@ -64,7 +65,7 @@ export default function Dashboard() {
 
       const leadsRes = await fetch(apiUrl('/api/ingestion/email'));
       const leadsData = await leadsRes.json();
-      
+
       const leadsArray = leadsData || [];
       setLeads(leadsArray);
 
@@ -88,6 +89,42 @@ export default function Dashboard() {
 
     }
   };
+
+  const filteredLeads = leads.filter((lead) => {
+    const search = searchTerm.trim().toLowerCase();
+
+    if (!search) return true;
+
+    return [
+      lead.name,
+      lead.full_name,
+      lead.email,
+      lead.phone,
+      lead.phoneNumber,
+      lead.phone_number,
+      lead.company,
+      lead.company_name,
+      lead.role,
+      lead.source,
+      lead.product,
+      lead.status,
+
+      // Lead status label
+      getLeadStatusLabel?.(lead.status),
+
+      // Follow-up labels
+      lead.followUp1Sent ? "follow up 1 follow-up 1 followup1 follow up 1 sent" : "",
+      lead.followUp2Sent ? "follow up 2 follow-up 2 followup2 follow up 2 sent" : "",
+      lead.followUp3Sent ? "follow up 3 follow-up 3 followup3 follow up 3 sent" : "",
+
+      // Overall follow-up label
+      getFollowUpStatusLabel?.(lead),
+    ]
+      .filter(Boolean)
+      .some((value) =>
+        value.toString().toLowerCase().includes(search)
+      );
+  });
   // ==========================================
   // INITIAL FETCH
   // ==========================================
@@ -318,7 +355,7 @@ export default function Dashboard() {
     }
   };
 
- 
+
   // ==========================================
   // RENDER MAIN DASHBOARD
   // ==========================================
@@ -337,14 +374,37 @@ export default function Dashboard() {
             onChange={handleFileUpload}
             style={{ display: 'none' }}
           />
+
+          {/* Search Box */}
+          <input
+            type="text"
+            placeholder="Search leads..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              padding: "8px 12px",
+              border: "1px solid #ccc",
+              borderRadius: "6px",
+              width: "300px"
+            }}
+          />
+
           <button
             onClick={() => setAddLeadModalOpen(true)}
             disabled={uploading}
             className="btn btn-secondary"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#10b981', color: 'white', borderColor: '#10b981' }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              backgroundColor: '#10b981',
+              color: 'white',
+              borderColor: '#10b981'
+            }}
           >
             + Add Lead
           </button>
+
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
@@ -354,6 +414,7 @@ export default function Dashboard() {
             <Download size={16} />
             {uploading ? 'Uploading...' : 'Upload Leads'}
           </button>
+
           <button
             onClick={() => setCampaignModalOpen(true)}
             disabled={sendingEmails}
@@ -367,6 +428,7 @@ export default function Dashboard() {
             )}
             {sendingEmails ? 'Starting Campaign...' : 'Send Emails'}
           </button>
+
           <button
             onClick={checkFollowUps}
             disabled={checkingFollowUps}
@@ -382,7 +444,6 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
-
       {campaignModalOpen && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.35)',
@@ -426,7 +487,7 @@ export default function Dashboard() {
                 <input
                   type="text"
                   value={singleLead.name}
-                  onChange={e => setSingleLead({...singleLead, name: e.target.value})}
+                  onChange={e => setSingleLead({ ...singleLead, name: e.target.value })}
                   className="form-control"
                   placeholder="John Doe"
                 />
@@ -436,7 +497,7 @@ export default function Dashboard() {
                 <input
                   type="email"
                   value={singleLead.email}
-                  onChange={e => setSingleLead({...singleLead, email: e.target.value})}
+                  onChange={e => setSingleLead({ ...singleLead, email: e.target.value })}
                   className="form-control"
                   placeholder="john@example.com"
                 />
@@ -446,14 +507,14 @@ export default function Dashboard() {
                 <input
                   type="text"
                   value={singleLead.phone}
-                  onChange={e => setSingleLead({...singleLead, phone: e.target.value})}
+                  onChange={e => setSingleLead({ ...singleLead, phone: e.target.value })}
                   className="form-control"
                   placeholder="6382108701"
                 />
               </div>
               <div className="form-group mt-3">
                 <label className="form-label">Product</label>
-                <select className="form-control" value={singleLead.product_type} onChange={e => setSingleLead({...singleLead, product_type: e.target.value})}>
+                <select className="form-control" value={singleLead.product_type} onChange={e => setSingleLead({ ...singleLead, product_type: e.target.value })}>
                   {PRODUCTS.map((product) => <option key={product.value} value={product.value}>{product.label}</option>)}
                 </select>
               </div>
@@ -573,16 +634,9 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {leads && leads.length > 0 ? (
-                    leads
-                      .filter(lead => {
-                        if (!searchQuery) return true;
-                        const name = lead.name || '';
-                        const email = lead.email || '';
-                        const query = searchQuery.toLowerCase();
-                        return name.toLowerCase().includes(query) || email.toLowerCase().includes(query);
-                      })
-                      .map((lead, index) => {
+
+                  {filteredLeads.length > 0 ? (
+                    filteredLeads.map((lead, index) => {
                       const isSent = ['sent', 'clicked', 'converted_to_lead', 'follow_up_sent'].includes(lead.status);
                       const isClicked = lead.status === 'clicked';
                       const bookDemoClickCount = lead.bookDemoClickCount || 0;
