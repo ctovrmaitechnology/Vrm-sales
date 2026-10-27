@@ -29,9 +29,29 @@ function readImportRows(buffer) {
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) throw new Error('The workbook does not contain a worksheet.');
 
-  return xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], {
+  const sheet = workbook.Sheets[sheetName];
+  const formattedRows = xlsx.utils.sheet_to_json(sheet, {
     defval: '',
     raw: false,
+  });
+  const rawRows = xlsx.utils.sheet_to_json(sheet, {
+    defval: '',
+    raw: true,
+  });
+
+  return formattedRows.map((row, index) => {
+    const rawRow = rawRows[index] || {};
+    for (const key of Object.keys(row)) {
+      const normalizedKey = key.trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (
+        ['phone', 'phone_number', 'whatsapp_number'].includes(normalizedKey) &&
+        typeof rawRow[key] === 'number' &&
+        Number.isFinite(rawRow[key])
+      ) {
+        row[key] = String(rawRow[key]);
+      }
+    }
+    return row;
   });
 }
 
@@ -50,12 +70,41 @@ function getImportText(row, ...keys) {
   return String(row[key]).trim();
 }
 
+function expandScientificNotation(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/^([+-]?)(\d+)(?:\.(\d*))?[eE]([+-]?\d+)$/);
+  if (!match) return text;
+
+  const exponent = Number(match[4]);
+  if (!Number.isInteger(exponent) || Math.abs(exponent) > 30) return text;
+
+  const sign = match[1];
+  const integer = match[2];
+  const fraction = match[3] || '';
+  const digits = integer + fraction;
+  const decimalPosition = integer.length + exponent;
+
+  if (decimalPosition <= 0) {
+    return `${sign}0.${'0'.repeat(-decimalPosition)}${digits}`;
+  }
+  if (decimalPosition >= digits.length) {
+    return `${sign}${digits}${'0'.repeat(decimalPosition - digits.length)}`;
+  }
+  return `${sign}${digits.slice(0, decimalPosition)}.${digits.slice(decimalPosition)}`;
+}
+
+function getImportPhoneText(row, ...keys) {
+  const key = keys.find((candidate) => row[candidate] !== undefined);
+  if (key === undefined || row[key] === null) return '';
+  return expandScientificNotation(row[key]);
+}
+
 function normalizeImportEmail(value) {
   return String(value || '').trim().toLowerCase();
 }
 
 function normalizeImportPhone(value) {
-  const digits = String(value || '').replace(/\D/g, '');
+  const digits = expandScientificNotation(value).replace(/\D/g, '');
   if (!digits) return '';
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
@@ -128,6 +177,8 @@ module.exports = {
   readImportRows,
   normalizeImportRow,
   getImportText,
+  getImportPhoneText,
+  expandScientificNotation,
   normalizeImportEmail,
   normalizeImportPhone,
   createDuplicateTracker,

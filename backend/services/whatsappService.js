@@ -41,16 +41,21 @@ async function sendWhatsAppTemplate(user, industry, product) {
   const rawName = user.name || user.full_name || (user.isCompanyContact ? user.company_name : '');
   const userName = rawName ? getFirstName(rawName) : "there";
 
-  // Dynamic buttons are only applied to templates that have URL buttons configured (e.g. not "workflow")
-  const useDynamicWhatsAppUrlButton = process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true" && templateName !== 'workflow';
+  const dynamicButtonTemplates = String(process.env.WHATSAPP_DYNAMIC_URL_BUTTON_TEMPLATES || '')
+    .split(',')
+    .map(name => name.trim())
+    .filter(Boolean);
+  const useDynamicWhatsAppUrlButton =
+    process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true" &&
+    dynamicButtonTemplates.includes(templateName);
   const dynamicWhatsAppUrlButtonIndexes = String(
     process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEXES ||
     process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEX ||
     "0"
   )
     .split(",")
-    .map(index => index.trim())
-    .filter(Boolean);
+    .map(index => Number(index.trim()))
+    .filter(index => Number.isInteger(index) && index >= 0);
   const demoRef = encodeLeadRef(user.email || user.phone || 'lead');
 
   // Clean phone number, ensure digits only

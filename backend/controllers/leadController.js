@@ -10,6 +10,7 @@ const {
   readImportRows,
   normalizeImportRow,
   getImportText,
+  getImportPhoneText,
   createDuplicateTracker,
   startImportProgress,
   writeImportProgress,
@@ -114,8 +115,8 @@ async function importManualLeads(req, res) {
       const values = {
         full_name,
         email: getImportText(row, 'email').toLowerCase() || null,
-        phone_number: getImportText(row, 'phone_number', 'phone'),
-        whatsapp_number: getImportText(row, 'whatsapp_number'),
+        phone_number: getImportPhoneText(row, 'phone_number', 'phone'),
+        whatsapp_number: getImportPhoneText(row, 'whatsapp_number'),
         company_name: getImportText(row, 'company_name', 'company'),
         role: getImportText(row, 'role', 'designation'),
         linkedin_url: getImportText(row, 'linkedin_url'),
