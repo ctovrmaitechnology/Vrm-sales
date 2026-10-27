@@ -354,7 +354,12 @@ async function getAllActiveLeads() {
 
 async function getManualLeads() {
   return prisma.leads.findMany({
-    where: { source: 'Manual Entry' },
+    where: {
+      OR: [
+        { source: 'Manual Entry' },
+        { user_id: { not: null } },
+      ],
+    },
     orderBy: { created_at: 'desc' },
     select: {
       id: true,
@@ -423,7 +428,7 @@ async function createManualLead(lead) {
 
 async function updateManualLead(id, lead) {
   const existing = await prisma.leads.findUnique({ where: { id } });
-  if (!existing || existing.source !== 'Manual Entry') return null;
+  if (!existing || (existing.source !== 'Manual Entry' && existing.user_id === null)) return null;
 
   const updated = await prisma.leads.update({
     where: { id },
@@ -436,7 +441,7 @@ async function updateManualLead(id, lead) {
       phone_number: lead.phone_number ?? existing.phone_number,
       email: 'email' in lead ? lead.email : existing.email,
       role: lead.role ?? existing.role,
-      source: 'Manual Entry',
+      source: lead.source || 'Manual Entry',
       status: lead.status ?? existing.status,
       note: lead.note ?? existing.note,
       email_status: lead.email_status ?? existing.email_status,

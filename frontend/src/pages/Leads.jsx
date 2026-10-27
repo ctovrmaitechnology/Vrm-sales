@@ -27,7 +27,7 @@ const LEAD_FIELDS = [
   { name: 'role', label: 'Role / Designation', placeholder: 'e.g. HR Manager' },
   { name: 'linkedin_url', label: 'LinkedIn URL', type: 'url', placeholder: 'https://linkedin.com/in/...' },
   { name: 'facebook_url', label: 'Facebook URL', type: 'url', placeholder: 'https://facebook.com/...' },
-  { name: 'source', label: 'Source', placeholder: 'e.g. Manual Entry, Referral' },
+  { name: 'source', label: 'Source', placeholder: 'e.g. Recruitment, Real Estate' },
   { name: 'note', label: 'Note', multiline: true, placeholder: 'Add background notes or context...', fullWidth: true },
   { name: 'address', label: 'Address', multiline: true, placeholder: 'City, State, Country...', fullWidth: true },
 ];

@@ -4,6 +4,7 @@
   "description": "Outreach AI Backend",
   "main": "app.js",
   "scripts": {
+    "postinstall": "prisma generate",
     "start": "node app.js",
     "dev": "nodemon app.js",
     "check": "node --check app.js",

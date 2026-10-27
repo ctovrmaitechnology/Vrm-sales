@@ -41,7 +41,7 @@ const COMPANY_FIELDS = [
   { name: 'whatsapp_number', label: 'WhatsApp number', type: 'tel', placeholder: '+91 98765 43210' },
   { name: 'linkedin_url', label: 'LinkedIn URL', type: 'url', placeholder: 'https://linkedin.com/in/...' },
   { name: 'facebook_url', label: 'Facebook URL', type: 'url', placeholder: 'https://facebook.com/...' },
-  { name: 'source', label: 'Source', placeholder: 'e.g. Company, Inbound' },
+  { name: 'source', label: 'Source', placeholder: 'e.g. Recruitment, Real Estate' },
   { name: 'note', label: 'Note', multiline: true, placeholder: 'Add notes about this company contact...', fullWidth: true },
   { name: 'address', label: 'Address', multiline: true, placeholder: 'Office address, City, Country...', fullWidth: true },
 ];

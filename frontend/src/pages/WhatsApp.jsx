@@ -49,6 +49,7 @@ const WhatsApp = () => {
         options: [{ value: 'Lead', label: 'Lead' }, { value: 'Company', label: 'Company' }],
       },
       { key: 'addedBy', label: 'Added by', field: 'createdByName' },
+      { key: 'source', label: 'Source', field: 'source' },
       {
         key: 'status',
         label: 'Status',
