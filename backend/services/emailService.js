@@ -23,6 +23,24 @@ function enqueueEmailSend(recipientEmail, sendFn) {
   return queuedSend;
 }
 
+// Convert HTML to plain text for multipart email (improves deliverability)
+function htmlToText(html) {
+  try {
+    return html
+      .replace(/<\/(style|script)[^>]*>[^]*?<\/(style|script)>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 2000);
+  } catch {
+    return '';
+  }
+}
+
 function buildDeliverabilityHeaders(user) {
   const recipientKey =
     Buffer.from(String(user.email || "").toLowerCase())
@@ -30,12 +48,7 @@ function buildDeliverabilityHeaders(user) {
       .slice(0, 16);
 
   return {
-    'X-Mailin-Track': 'false',
-    'Message-ID': `<vrm-${Date.now()}-${user.id || recipientKey}@vrmaitechnology.com>`,
-    'X-Priority': '3 (Normal)',
-    'X-MSMail-Priority': 'Normal',
-    'Importance': 'Normal',
-    'X-Entity-Ref-ID': `vrm-${user.id || recipientKey}`
+    'Message-ID': `<vrm-${Date.now()}-${user.id || recipientKey}@vrmaitechnology.com>`
   };
 }
 
@@ -102,34 +115,32 @@ function renderEmailParagraphs(messageText, getTrackedHref, bookDemoHref) {
 
 async function executeBrevoApiNow(user, subject, messageText) {
   const firstName = getFirstName(user.name);
-  const bookDemoHref = `${FRONTEND_BASE_URL}/contactus/#send-message-section`;
-  const demoLink = buildTrackedDemoRedirectUrl(user.email, bookDemoHref, "demo");
-  const getTrackedHref = (redirectUrl, kind) => buildTrackedDemoRedirectUrl(user.email, redirectUrl, kind);
   const deliverabilityHeaders = buildDeliverabilityHeaders(user);
-  const hasGreeting = /^hi\b/i.test(String(messageText || "").trim());
-  const htmlIntro = hasGreeting
-    ? ""
-    : `<p style="margin-bottom: 16px;">Hi ${firstName},</p>`;
-  const renderedContent = renderEmailParagraphs(messageText, getTrackedHref, bookDemoHref);
+  const hasGreeting = /^hi\b/i.test(String(messageText || '').trim());
+
+  const htmlIntro = hasGreeting ? '' : `<p style="margin-bottom:16px;">Hi ${firstName},</p>`;
+  const paragraphs = String(messageText || '').split('\n\n').map((p) => {
+    const text = p.trim();
+    if (!text) return '';
+    return `<p style="margin-bottom:16px;">${escapeHtml(text).replace(/\n/g, '<br>')}</p>`;
+  }).join('');
 
   const finalHtml = `
     <html>
-      <body style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #333333; margin: 0; padding: 20px;">
+      <body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#333333;margin:0;padding:20px;">
         ${htmlIntro}
-        ${renderedContent.html}
-        ${renderedContent.hasBookDemoButton ? "" : `
-          ${renderButton(demoLink, "Book a Demo", "#0076FF")}
-        `}
+        ${paragraphs}
       </body>
     </html>
   `;
 
   const emailPayload = {
-    sender: { name: "VRM AI Technology", email: "contactus@vrmaitechnology.com" },
+    sender: { name: "Harini", email: "contactus@vrmaitechnology.com" },
     to: [{ email: user.email, name: firstName }],
     replyTo: { email: "contactus@vrmaitechnology.com", name: "Harini" },
     subject,
     htmlContent: finalHtml,
+    textContent: htmlToText(finalHtml),
     headers: deliverabilityHeaders
   };
 

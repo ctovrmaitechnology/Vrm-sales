@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
-const { startCampaign, unsubscribe, startManualFollowUpCheck } = require('../controllers/emailController');
+const { startCampaign, getCampaignStatus, unsubscribe, startManualFollowUpCheck } = require('../controllers/emailController');
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -9,6 +9,7 @@ const apiLimiter = rateLimit({
 });
 
 router.post('/send-emails', apiLimiter, startCampaign);
+router.get('/send-emails/status', getCampaignStatus);
 router.all('/unsubscribe', unsubscribe);
 router.post('/follow-ups/check', startManualFollowUpCheck);
 

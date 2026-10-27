@@ -28,14 +28,21 @@ async function sendWhatsAppTemplate(user, industry, product) {
   }
 
   // 3. Dynamic template selection logic based on user type
-  const templateName = getCampaign(product)?.whatsappTemplate;
+  const campaign = getCampaign(product);
+  const templateName = campaign?.whatsappTemplate || (product === 'workflow' || product === 'workflow_ai' ? 'workflow' : null);
+  const templateLanguage = campaign?.whatsappLanguage || 'en';
+
   if (!templateName) {
     console.log(`WhatsApp skipped for ${user.email} - No approved template configured for ${product}.`);
     return { skipped: true, reason: "product_template_not_configured" };
   }
 
-  const firstName = getFirstName(user.name);
-  const useDynamicWhatsAppUrlButton = process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true";
+  // Name resolution for {{1}} parameter
+  const rawName = user.name || user.full_name || (user.isCompanyContact ? user.company_name : '');
+  const userName = rawName ? getFirstName(rawName) : "there";
+
+  // Dynamic buttons are only applied to templates that have URL buttons configured (e.g. not "workflow")
+  const useDynamicWhatsAppUrlButton = process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true" && templateName !== 'workflow';
   const dynamicWhatsAppUrlButtonIndexes = String(
     process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEXES ||
     process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEX ||
@@ -44,7 +51,7 @@ async function sendWhatsAppTemplate(user, industry, product) {
     .split(",")
     .map(index => index.trim())
     .filter(Boolean);
-  const demoRef = encodeLeadRef(user.email);
+  const demoRef = encodeLeadRef(user.email || user.phone || 'lead');
 
   // Clean phone number, ensure digits only
   let cleanPhone = String(phone).replace(/\D/g, '');
@@ -57,11 +64,12 @@ async function sendWhatsAppTemplate(user, industry, product) {
   const BACKEND_URL = process.env.BACKEND_BASE_URL || 'http://localhost:5002';
   const fullDemoLink = `${BACKEND_URL}/api/book-demo?ref=${demoRef}&kind=demo`;
 
+  // Body component: {{1}} is replaced with the user's name
   const components = [
     {
       type: "body",
       parameters: [
-        { type: "text", text: String(user.name || "there").split(' ')[0] }
+        { type: "text", text: userName }
       ]
     }
   ];
@@ -79,7 +87,7 @@ async function sendWhatsAppTemplate(user, industry, product) {
     });
   }
 
-  // Sample WhatsApp API payload for all configured product templates
+  // WhatsApp API payload
   const payload = {
     messaging_product: "whatsapp",
     to: cleanPhone,
@@ -87,33 +95,43 @@ async function sendWhatsAppTemplate(user, industry, product) {
     template: {
       name: templateName,
       language: {
-        code: "en" // or en_US, adjust to match your approved template language
+        code: templateLanguage
       },
       components
     }
   };
 
-  // 4. Detailed console logs & proper try-catch handling
+  // 4. Send message via Meta WhatsApp Cloud API
+  let response;
   try {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
 
     // Use axios as requested
-    const response = await axios.post(url, payload, {
+    response = await axios.post(url, payload, {
       headers: {
         'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
         'Content-Type': 'application/json'
       }
     });
 
-    await updateWhatsAppLeadStatus(phone, "sent", "template_sent", {
-      whatsappStatus: "sent"
-    });
-
-    console.log(`WhatsApp template '${templateName}' sent to ${phone} (User: ${user.email}) - Message ID: ${response.data.messages[0].id}`);
+    console.log(`WhatsApp template '${templateName}' sent to ${phone} (User: ${user.email}) - Message ID: ${response.data?.messages?.[0]?.id}`);
   } catch (error) {
-    // 5. If WhatsApp sending fails: email flow should continue normally, server should not crash
-    console.log(`WhatsApp API Error for ${user.email}:`, error.response?.data || error.message);
+    // 5. If WhatsApp sending fails: log the actual Meta API error and do not crash
+    console.error(`WhatsApp API Error for ${user.email}:`, error.response?.data || error.message);
+    throw error;
   }
+
+  // 6. Update lead & status in database
+  try {
+    await updateWhatsAppLeadStatus(phone, "sent", "template_sent", {
+      whatsappStatus: "sent",
+      user
+    });
+  } catch (dbErr) {
+    console.error(`[WA DB Notice] Status update skipped for ${phone}:`, dbErr.message);
+  }
+
+  return response?.data;
 }
 
 module.exports = {

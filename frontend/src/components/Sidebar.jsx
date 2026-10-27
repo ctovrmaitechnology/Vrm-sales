@@ -1,16 +1,18 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Globe2, LayoutDashboard, MessageCircle, Mail, Users } from 'lucide-react';
+import { Building2, Globe2, LayoutDashboard, MessageCircle, Mail, Users } from 'lucide-react';
 import Linkedin from './LinkedinIcon';
 
 const Sidebar = () => {
   const navItems = [
     { path: '/app', label: 'Overview', icon: <LayoutDashboard size={20} /> },
-    { path: '/app/linkedin', label: 'LinkedIn', icon: <Linkedin size={20} /> },
-    { path: '/app/whatsapp', label: 'WhatsApp', icon: <MessageCircle size={20} /> },
+    // { path: '/app/linkedin', label: 'LinkedIn', icon: <Linkedin size={20} /> },
+    { path: '/app/whatsapp', label: 'WhatsApp Campaign', icon: <MessageCircle size={20} /> },
     { path: '/app/leads', label: 'Leads', icon: <Users size={20} /> },
-    { path: '/app/facebook', label: 'Facebook', icon: <Globe2 size={20} /> },
+    // { path: '/app/facebook', label: 'Facebook', icon: <Globe2 size={20} /> },
     { path: '/email', label: 'Email', icon: <Mail size={20} /> },
+    { path: '/app/company', label: 'Company', icon: <Building2 size={20} /> },
+    { path: '/app/users', label: 'Users', icon: <Users size={20} /> },
   ];
 
   return (

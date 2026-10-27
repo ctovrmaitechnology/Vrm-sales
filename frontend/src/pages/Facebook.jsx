@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Download, Loader2, Play, Square, Upload } from 'lucide-react';
 import Button from '../components/Button';
+import TablePagination from '../components/TablePagination';
+import TableFilters from '../components/TableFilters';
+import useTableFilters from '../hooks/useTableFilters';
 
 const FACEBOOK_BASE_URL = import.meta.env.VITE_FACEBOOK_BASE_URL || '/facebook-api';
-const pageSize = 20;
 
 const normalizeLead = (lead, index) => ({
   id: `${lead.facebook_url || lead.linkedin_url || lead.email || lead.mail || index}`,
@@ -19,6 +21,15 @@ const normalizeLead = (lead, index) => ({
   extraction_date: lead.extraction_date || '',
 });
 
+const FACEBOOK_FILTER_CONFIG = {
+  searchFields: ['full_name', 'company', 'role', 'email', 'phone', 'whatsapp_number', 'facebook_url', 'linkedin_url'],
+  facets: [
+    { key: 'company', label: 'Company', field: 'company' },
+    { key: 'role', label: 'Role', field: 'role' },
+  ],
+  dateField: 'extraction_date',
+};
+
 const Facebook = () => {
   const [status, setStatus] = useState({ running: false, facebookLeadsCount: 0, finalLeadsCount: 0, logs: [] });
   const [facebookLeads, setFacebookLeads] = useState([]);
@@ -27,9 +38,20 @@ const Facebook = () => {
   const [finalTotal, setFinalTotal] = useState(0);
   const [activeAction, setActiveAction] = useState('');
   const [notice, setNotice] = useState('');
-  const [page, setPage] = useState(1);
+  const [facebookPage, setFacebookPage] = useState(1);
+  const [finalPage, setFinalPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const facebookFilters = useTableFilters(facebookLeads, FACEBOOK_FILTER_CONFIG);
+  const finalFilters = useTableFilters(finalLeads, FACEBOOK_FILTER_CONFIG);
 
-  const queryString = useMemo(() => new URLSearchParams({ page: String(page), pageSize: String(pageSize) }).toString(), [page]);
+  const facebookQueryString = useMemo(
+    () => new URLSearchParams({ page: String(facebookPage), pageSize: String(pageSize) }).toString(),
+    [facebookPage, pageSize]
+  );
+  const finalQueryString = useMemo(
+    () => new URLSearchParams({ page: String(finalPage), pageSize: String(pageSize) }).toString(),
+    [finalPage, pageSize]
+  );
 
   const loadStatus = async () => {
     const res = await fetch(`${FACEBOOK_BASE_URL}/api/facebook/status`);
@@ -38,8 +60,8 @@ const Facebook = () => {
 
   const loadLeads = async () => {
     const [fbRes, finalRes] = await Promise.all([
-      fetch(`${FACEBOOK_BASE_URL}/api/facebook/leads?${queryString}`).catch(() => null),
-      fetch(`${FACEBOOK_BASE_URL}/api/facebook/final-leads?${queryString}`).catch(() => null),
+      fetch(`${FACEBOOK_BASE_URL}/api/facebook/leads?${facebookQueryString}`).catch(() => null),
+      fetch(`${FACEBOOK_BASE_URL}/api/facebook/final-leads?${finalQueryString}`).catch(() => null),
     ]);
 
     if (fbRes?.ok) {
@@ -58,7 +80,7 @@ const Facebook = () => {
   useEffect(() => {
     loadStatus();
     loadLeads();
-  }, [queryString]);
+  }, [facebookQueryString, finalQueryString]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -66,7 +88,7 @@ const Facebook = () => {
       if (status.running) loadLeads();
     }, 5000);
     return () => clearInterval(interval);
-  }, [status.running, queryString]);
+  }, [status.running, facebookQueryString, finalQueryString]);
 
   const runAction = async (name, url, options = {}) => {
     setActiveAction(name);
@@ -202,6 +224,10 @@ const Facebook = () => {
 
       <div className="dashboard-section mb-6">
         <h2 className="section-title">Facebook Excel</h2>
+        <TableFilters {...facebookFilters} searchPlaceholder="Search loaded Facebook rows..." />
+        <p style={{ margin: '-0.5rem 0 0.75rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+          Filters apply to the currently loaded page.
+        </p>
         <div className="table-container">
           <table>
             <thead>
@@ -216,13 +242,25 @@ const Facebook = () => {
                 <th>Extraction Date</th>
               </tr>
             </thead>
-            <tbody>{renderRows(facebookLeads, false)}</tbody>
+            <tbody>{renderRows(facebookFilters.filteredItems, false)}</tbody>
           </table>
+          <TablePagination
+            page={facebookPage}
+            pageSize={pageSize}
+            pageCount={Math.max(1, Math.ceil(facebookTotal / pageSize))}
+            totalCount={facebookTotal}
+            setPage={setFacebookPage}
+            setPageSize={(size) => { setPageSize(size); setFacebookPage(1); setFinalPage(1); }}
+          />
         </div>
       </div>
 
       <div className="dashboard-section mb-6">
         <h2 className="section-title">Phase 3 LinkedIn URL Excel</h2>
+        <TableFilters {...finalFilters} searchPlaceholder="Search loaded LinkedIn rows..." />
+        <p style={{ margin: '-0.5rem 0 0.75rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+          Filters apply to the currently loaded page.
+        </p>
         <div className="table-container">
           <table>
             <thead>
@@ -238,16 +276,17 @@ const Facebook = () => {
                 <th>Extraction Date</th>
               </tr>
             </thead>
-            <tbody>{renderRows(finalLeads, true)}</tbody>
+            <tbody>{renderRows(finalFilters.filteredItems, true)}</tbody>
           </table>
         </div>
-        <div className="flex items-center justify-between mt-4">
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Page {page} - Facebook {facebookTotal}, LinkedIn {finalTotal}</span>
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Previous</Button>
-            <Button variant="secondary" onClick={() => setPage((p) => p + 1)} disabled={facebookLeads.length < pageSize && finalLeads.length < pageSize}>Next</Button>
-          </div>
-        </div>
+        <TablePagination
+          page={finalPage}
+          pageSize={pageSize}
+          pageCount={Math.max(1, Math.ceil(finalTotal / pageSize))}
+          totalCount={finalTotal}
+          setPage={setFinalPage}
+          setPageSize={(size) => { setPageSize(size); setFacebookPage(1); setFinalPage(1); }}
+        />
       </div>
 
       <div className="dashboard-section">

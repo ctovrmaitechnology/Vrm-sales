@@ -16,6 +16,7 @@ function Login() {
   const ADMIN_USERS = [
     { email: 'maanusree@vrmaitechnology.com', password: 'password@vrm' },
     { email: 'harini@vrmaitechnology.com', password: 'password@vrm' },
+    { email: 'admin@vrmaitechnology.com', password: 'vrm123' },
   ];
 
   const handleChange = (e) => {

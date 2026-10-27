@@ -1,357 +1,1042 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Eye, ExternalLink, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import Button from '../components/Button';
-import { Download, Loader2, Play, Square } from 'lucide-react';
-import { DEFAULT_PRODUCT, PRODUCTS } from '../config/products';
+import ExcelImportControls from '../components/ExcelImportControls';
+import TablePagination from '../components/TablePagination';
+import TableFilters from '../components/TableFilters';
+import useTableFilters from '../hooks/useTableFilters';
+import useTablePagination from '../hooks/useTablePagination';
 
-const FACEBOOK_BASE_URL = import.meta.env.VITE_FACEBOOK_BASE_URL || '/facebook-api';
-const INDIA_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-IN', {
+const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
+const apiUrl = (path) => `${BACKEND_BASE_URL}${path}`;
+const EMPTY_LIST = [];
+const LEAD_FILTERS = [
+  { key: 'status', label: 'Status', field: 'status' },
+  { key: 'email_status', label: 'Email status', field: 'email_status' },
+  { key: 'source', label: 'Source', field: 'source' },
+  { key: 'owner', label: 'Assigned user', field: 'owner.employee_name' },
+];
+
+const LEAD_FIELDS = [
+  { name: 'full_name', label: 'Full name', required: true, placeholder: 'e.g. Alex Johnson' },
+  { name: 'email', label: 'Email', type: 'email', placeholder: 'alex@company.com' },
+  { name: 'phone_number', label: 'Phone number', type: 'tel', placeholder: '+91 98765 43210' },
+  { name: 'whatsapp_number', label: 'WhatsApp number', type: 'tel', placeholder: '+91 98765 43210' },
+  { name: 'company_name', label: 'Company name', placeholder: 'e.g. Acme Corp' },
+  { name: 'role', label: 'Role / Designation', placeholder: 'e.g. HR Manager' },
+  { name: 'linkedin_url', label: 'LinkedIn URL', type: 'url', placeholder: 'https://linkedin.com/in/...' },
+  { name: 'facebook_url', label: 'Facebook URL', type: 'url', placeholder: 'https://facebook.com/...' },
+  { name: 'source', label: 'Source', placeholder: 'e.g. Manual Entry, Referral' },
+  { name: 'note', label: 'Note', multiline: true, placeholder: 'Add background notes or context...', fullWidth: true },
+  { name: 'address', label: 'Address', multiline: true, placeholder: 'City, State, Country...', fullWidth: true },
+];
+
+const EMPTY_LEAD = {
+  ...Object.fromEntries(LEAD_FIELDS.map(({ name }) => [name, ''])),
+  status: 'new',
+  email_status: 'not sent',
+  user_id: '',
+};
+
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-IN', {
   dateStyle: 'medium',
   timeStyle: 'short',
   timeZone: 'Asia/Kolkata',
 });
 
-const formatIndiaDateTime = (value) => {
+const formatDateTime = (value) => {
   if (!value) return '-';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return INDIA_DATE_TIME_FORMATTER.format(date);
+  return Number.isNaN(date.getTime()) ? '-' : DATE_TIME_FORMATTER.format(date);
 };
-
-const getIndiaDateInputValue = () => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: 'Asia/Kolkata',
-  }).formatToParts(new Date());
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value.year}-${value.month}-${value.day}`;
-};
-
-const normalizeGoogleLead = (lead) => ({
-  id: `google-${lead.id}`,
-  rawId: lead.id,
-  full_name: lead.full_name || '',
-  role: lead.role || '',
-  company_name: lead.company_name || lead.company || '',
-  email: lead.email || lead.mail || '',
-  phone_number: lead.phone_number || lead.phone || '',
-  facebook_url: lead.facebook_url || '',
-  source: 'Facebook Scraper',
-  sourceKey: 'google',
-  status: lead.status || 'new',
-  extraction_date: lead.extraction_date || lead.created_at,
-  message: '',
-});
 
 const Leads = () => {
-  const [googleLeads, setGoogleLeads] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [scraping, setScraping] = useState(false);
-  const [scrapingMode, setScrapingMode] = useState('');
-  const [googleStatus, setGoogleStatus] = useState({ running: false, inserted: 0, exported: 0, logs: [] });
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
-  const [downloadDate, setDownloadDate] = useState(getIndiaDateInputValue);
-  const [downloadProduct, setDownloadProduct] = useState('all');
-  const [productModalMode, setProductModalMode] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState(DEFAULT_PRODUCT);
-  const [notice, setNotice] = useState('');
-  const [filters, setFilters] = useState({
-    from: '',
-    to: '',
+  const queryClient = useQueryClient();
+  const manualLeadsQuery = useQuery({
+    queryKey: ['manual-leads'],
+    queryFn: async () => {
+      const response = await fetch(apiUrl('/api/manual-leads'));
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to load manually added leads.');
+      if (!Array.isArray(data)) throw new Error('The leads API returned an invalid response.');
+      return data;
+    },
   });
-  const pageSize = 20;
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const response = await fetch(apiUrl('/api/users'));
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to load employees.');
+      if (!Array.isArray(data?.data)) throw new Error('The employees API returned an invalid response.');
+      return data.data;
+    },
+  });
+  const manualLeads = manualLeadsQuery.data || EMPTY_LIST;
+  const users = usersQuery.data || EMPTY_LIST;
+  const loading = manualLeadsQuery.isLoading;
+  const [modalOpen, setModalOpen] = useState(false);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [viewingLead, setViewingLead] = useState(null);
+  const [deletingLead, setDeletingLead] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [lead, setLead] = useState(EMPTY_LEAD);
+  const [editingId, setEditingId] = useState(null); // null = add mode, number = edit mode
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const googleQueryString = useMemo(() => {
-    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-    ['from', 'to'].forEach((key) => {
-      if (filters[key]) params.set(key, filters[key]);
-    });
-    return params.toString();
-  }, [filters, page]);
-
-  const loadStatus = async () => {
-    const res = await fetch(`${FACEBOOK_BASE_URL}/api/google/status`);
-    if (res.ok) setGoogleStatus(await res.json());
+  const openAddModal = () => {
+    setError('');
+    setEditingId(null);
+    setLead(EMPTY_LEAD);
+    setModalOpen(true);
   };
 
-  const loadLeads = async () => {
-    setLoading(true);
+  const openEditModal = (item) => {
+    setError('');
+    setEditingId(item.id);
+    setLead({
+      full_name: item.full_name || '',
+      whatsapp_number: item.whatsapp_number || '',
+      facebook_url: item.facebook_url || '',
+      linkedin_url: item.linkedin_url || '',
+      company_name: item.company_name || '',
+      phone_number: item.phone_number || '',
+      email: item.email || '',
+      role: item.role || '',
+      source: item.source || '',
+      status: item.status || 'new',
+      note: item.note || '',
+      email_status: item.email_status || 'not sent',
+      address: item.address || '',
+      user_id: item.user_id != null ? String(item.user_id) : '',
+    });
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditingId(null);
+    setLead(EMPTY_LEAD);
+  };
+
+  const saveLead = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    setNotice('');
+
+    if (!lead.user_id) {
+      setError('Please select an assigned user.');
+      setSaving(false);
+      return;
+    }
+
+    const isEdit = editingId !== null;
+    const url = isEdit ? apiUrl(`/api/manual-leads/${editingId}`) : apiUrl('/api/manual-leads');
+    const method = isEdit ? 'PUT' : 'POST';
+
     try {
-      const googleRes = await fetch(`${FACEBOOK_BASE_URL}/api/google/leads?${googleQueryString}`);
-      const googleData = googleRes ? await googleRes.json() : { data: [], total: 0 };
-      const googles = (googleData.data || []).map(normalizeGoogleLead);
-      setGoogleLeads(googles);
-      setTotal(googleData.total || 0);
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(lead),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to save lead.');
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['manual-leads'] }),
+        queryClient.invalidateQueries({ queryKey: ['email-leads'] }),
+        queryClient.invalidateQueries({ queryKey: ['whatsapp-leads'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['global-search'] }),
+      ]);
+      setNotice(isEdit ? 'Lead updated successfully.' : 'Lead added successfully.');
+
+      closeModal();
+    } catch (saveError) {
+      setError(saveError.message);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  useEffect(() => {
-    loadLeads();
-    loadStatus();
-  }, [googleQueryString]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadStatus();
-      if (googleStatus.running) loadLeads();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [googleStatus.running]);
-
-  const leads = useMemo(() => googleLeads, [googleLeads]);
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
-  const updateFilter = (key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
-    setPage(1);
+  const openViewModal = (item) => {
+    setViewingLead(item);
+    setViewModalOpen(true);
   };
 
-  const startScraping = async (mode, product) => {
-    setScraping(true);
-    setScrapingMode(mode);
+  const openDeleteModal = (item) => {
+    setDeletingLead(item);
+    setError('');
+    setDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingLead) return;
+    setDeleting(true);
+    setError('');
     setNotice('');
     try {
-      const endpoint = mode === 'india'
-        ? '/api/google/start-india'
-        : mode === 'international'
-          ? '/api/google/start-international'
-          : '/api/google/start';
-      const res = await fetch(`${FACEBOOK_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product }),
+      const response = await fetch(apiUrl(`/api/manual-leads/${deletingLead.id}`), {
+        method: 'DELETE',
       });
-      const data = await res.json().catch(() => null);
-      setNotice(data?.message || (res.ok ? 'Lead scraper started.' : 'Lead scraper could not start.'));
-      await loadStatus();
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to delete lead.');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['manual-leads'] }),
+        queryClient.invalidateQueries({ queryKey: ['email-leads'] }),
+        queryClient.invalidateQueries({ queryKey: ['whatsapp-leads'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['global-search'] }),
+      ]);
+      setDeleteModalOpen(false);
+      setDeletingLead(null);
+      setNotice('Lead deleted successfully.');
+    } catch (delError) {
+      setError(delError.message);
     } finally {
-      setScraping(false);
-      setScrapingMode('');
+      setDeleting(false);
     }
   };
 
-  const stopScraping = async () => {
-    const res = await fetch(`${FACEBOOK_BASE_URL}/api/google/stop`, { method: 'POST' });
-    const data = await res.json().catch(() => null);
-    setNotice(data?.message || 'Lead scraper stop requested.');
-    await loadStatus();
-  };
-
-  const exportLeads = (selectedDate, product) => {
-    const params = new URLSearchParams();
-    if (selectedDate) params.set('date', selectedDate);
-    if (product && product !== 'all') params.set('product', product);
-    window.location.href = `${FACEBOOK_BASE_URL}/api/google/export?${params.toString()}`;
-    setDownloadModalOpen(false);
-  };
-
-  const exportFilteredLeads = () => {
-    const params = new URLSearchParams(googleQueryString);
-    params.delete('page');
-    params.delete('pageSize');
-    window.location.href = `${FACEBOOK_BASE_URL}/api/google/export?${params.toString()}`;
-  };
+  const leadTableFilters = useTableFilters(manualLeads, {
+    facets: LEAD_FILTERS,
+    dateField: 'created_at',
+  });
+  const filteredLeads = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return leadTableFilters.filteredItems;
+    return leadTableFilters.filteredItems.filter((item) => (
+      (item.full_name && item.full_name.toLowerCase().includes(q)) ||
+      (item.email && item.email.toLowerCase().includes(q)) ||
+      (item.phone_number && item.phone_number.toLowerCase().includes(q)) ||
+      (item.whatsapp_number && item.whatsapp_number.toLowerCase().includes(q)) ||
+      (item.company_name && item.company_name.toLowerCase().includes(q)) ||
+      (item.role && item.role.toLowerCase().includes(q)) ||
+      (item.source && item.source.toLowerCase().includes(q)) ||
+      (item.note && item.note.toLowerCase().includes(q)) ||
+      (item.address && item.address.toLowerCase().includes(q)) ||
+      (item.owner?.employee_name && item.owner.employee_name.toLowerCase().includes(q))
+    ));
+  }, [leadTableFilters.filteredItems, searchTerm]);
+  const leadPagination = useTablePagination(filteredLeads);
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6" style={{ flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 className="page-title">Leads</h1>
-          <p className="page-subtitle">Phase 1 Facebook lead scraping and exports</p>
+          <p className="page-subtitle">Manage manually added leads</p>
         </div>
-        <div className="flex gap-4" style={{ flexWrap: 'wrap' }}>
-          {googleStatus.running ? (
-            <Button
-              variant="danger"
-              icon={<Square size={16} />}
-              onClick={stopScraping}
-              disabled={scraping}
-            >
-              Stop Lead Scraper
-            </Button>
-          ) : (
-            <>
-              <Button
-                variant="primary"
-                icon={scraping && scrapingMode === 'india' ? <Loader2 size={16} className="spin" /> : <Play size={16} />}
-                onClick={() => setProductModalMode('india')}
-                disabled={scraping}
-              >
-                Start Scraping Indian Profiles
-              </Button>
-              <Button
-                variant="primary"
-                icon={scraping && scrapingMode === 'international' ? <Loader2 size={16} className="spin" /> : <Play size={16} />}
-                onClick={() => setProductModalMode('international')}
-                disabled={scraping}
-              >
-                Start Scraping International Leads
-              </Button>
-            </>
-          )}
-          <Button variant="secondary" icon={<Download size={16} />} onClick={() => setDownloadModalOpen(true)}>
-            Download Leads
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <ExcelImportControls
+            entity="lead"
+            users={users}
+            onImported={() => Promise.all([
+              queryClient.invalidateQueries({ queryKey: ['manual-leads'] }),
+              queryClient.invalidateQueries({ queryKey: ['email-leads'] }),
+              queryClient.invalidateQueries({ queryKey: ['whatsapp-leads'] }),
+              queryClient.invalidateQueries({ queryKey: ['overview-stats'] }),
+              queryClient.invalidateQueries({ queryKey: ['global-search'] }),
+            ])}
+          />
+          <Button
+            variant="primary"
+            icon={<Plus size={16} />}
+            onClick={openAddModal}
+          >
+            Add Lead
           </Button>
         </div>
       </div>
 
       {notice && (
-        <div className="dashboard-section" style={{ marginBottom: '1rem', padding: '0.75rem 1rem' }}>
+        <div className="dashboard-section" role="status" style={{ marginBottom: '1rem' }}>
           {notice}
         </div>
       )}
 
-      {productModalMode && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.35)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem',
-        }}>
-          <div className="dashboard-section" style={{ width: '100%', maxWidth: 420, margin: 0 }}>
-            <h2 className="section-title">Select Product</h2>
-            <div className="form-group">
-              <label className="form-label">Product</label>
-              <select className="form-control" value={selectedProduct} onChange={(event) => setSelectedProduct(event.target.value)}>
-                {PRODUCTS.map((product) => <option key={product.value} value={product.value}>{product.label}</option>)}
-              </select>
-            </div>
-            <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
-              <Button variant="secondary" onClick={() => setProductModalMode('')} disabled={scraping}>Cancel</Button>
-              <Button
-                variant="primary"
-                onClick={async () => {
-                  const mode = productModalMode;
-                  setProductModalMode('');
-                  await startScraping(mode, selectedProduct);
-                }}
-                disabled={scraping || !selectedProduct}
-              >
-                Start Scraping
-              </Button>
-            </div>
-          </div>
+      {error && !modalOpen && (
+        <div className="dashboard-section" role="alert" style={{ marginBottom: '1rem', color: '#b91c1c' }}>
+          {error}
         </div>
       )}
-
-      {downloadModalOpen && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(15, 23, 42, 0.35)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 50,
-          padding: '1rem',
-        }}>
-          <div className="dashboard-section" style={{ width: '100%', maxWidth: 420, margin: 0 }}>
-            <h2 className="section-title">Download Leads</h2>
-            <div className="form-group">
-              <label className="form-label">Scraped Date</label>
-              <input
-                className="form-control"
-                type="date"
-                value={downloadDate}
-                onChange={(event) => setDownloadDate(event.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Product</label>
-              <select className="form-control" value={downloadProduct} onChange={(event) => setDownloadProduct(event.target.value)}>
-                <option value="all">All Products</option>
-                {PRODUCTS.map((product) => <option key={product.value} value={product.value}>{product.label}</option>)}
-              </select>
-            </div>
-            <div className="flex gap-2 mt-4" style={{ justifyContent: 'flex-end' }}>
-              <Button variant="secondary" onClick={() => setDownloadModalOpen(false)}>Cancel</Button>
-              <Button variant="secondary" onClick={exportFilteredLeads}>Use Current Filters</Button>
-              <Button variant="primary" icon={<Download size={16} />} onClick={() => exportLeads(downloadDate, downloadProduct)} disabled={!downloadDate}>
-                Download
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="stats-grid mb-6">
-        <div className="stat-card"><div className="stat-title">Total Leads</div><div className="stat-value">{total}</div></div>
-        <div className="stat-card"><div className="stat-title">Scraped Leads Count</div><div className="stat-value">{googleStatus.inserted || googleLeads.length}</div></div>
-        <div className="stat-card"><div className="stat-title">Exported Leads Count</div><div className="stat-value">{googleStatus.exported || 0}</div></div>
-        <div className="stat-card"><div className="stat-title">Live Scraping Status</div><div className="stat-value">{googleStatus.running ? 'Running' : 'Stopped'}</div></div>
-      </div>
 
       <div className="dashboard-section">
-        <div className="flex gap-4 mb-4" style={{ flexWrap: 'wrap' }}>
-          <div className="form-group">
-            <label className="form-label">From</label>
-            <input className="form-control" type="date" value={filters.from} onChange={(e) => updateFilter('from', e.target.value)} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+          <div>
+            <h2 className="section-title" style={{ margin: 0 }}>Manually Added Leads</h2>
+            <p style={{ fontSize: '0.8125rem', color: '#64748b', margin: '0.25rem 0 0' }}>
+              Showing {filteredLeads.length} of {manualLeads.length} leads
+            </p>
           </div>
-          <div className="form-group">
-            <label className="form-label">To</label>
-            <input className="form-control" type="date" value={filters.to} onChange={(e) => updateFilter('to', e.target.value)} />
+
+          {/* Search Input */}
+          <div style={{ position: 'relative', width: '100%', maxWidth: '360px' }}>
+            <Search
+              size={16}
+              style={{
+                position: 'absolute',
+                left: '0.85rem',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#94a3b8',
+                pointerEvents: 'none',
+              }}
+            />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                leadPagination.setPage(1);
+              }}
+              placeholder="Search leads by name, email, company, phone..."
+              style={{
+                width: '100%',
+                padding: '0.55rem 2.2rem 0.55rem 2.4rem',
+                borderRadius: '8px',
+                border: '1.5px solid #cbd5e1',
+                fontSize: '0.875rem',
+                outline: 'none',
+                backgroundColor: '#ffffff',
+                color: '#0f172a',
+                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+                transition: 'border-color 0.15s, box-shadow 0.15s',
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = '#0076FF';
+                e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0, 118, 255, 0.12)';
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.04)';
+              }}
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                style={{
+                  position: 'absolute',
+                  right: '0.6rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  padding: '2px',
+                  cursor: 'pointer',
+                  color: '#94a3b8',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+                title="Clear search"
+              >
+                <X size={15} />
+              </button>
+            )}
           </div>
         </div>
+        <TableFilters
+          {...leadTableFilters}
+          showSearch={false}
+          hasFilters={leadTableFilters.hasFilters || Boolean(searchTerm)}
+          clearFilters={() => {
+            leadTableFilters.clearFilters();
+            setSearchTerm('');
+          }}
+        />
 
         <div className="table-container">
           <table>
             <thead>
               <tr>
-                <th>Full Name</th>
-                <th>Role</th>
+                <th>Name</th>
                 <th>Company</th>
                 <th>Email</th>
                 <th>Phone Number</th>
-                <th>Facebook URL</th>
-                <th>Source</th>
-                <th>Status</th>
-                <th>Extraction Date</th>
+                <th>Additional Information</th>
+                <th>Assigned User</th>
+                <th>Added</th>
+                <th style={{ textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="9" style={{ textAlign: 'center', padding: '2rem' }}>Loading leads...</td></tr>
-              ) : leads.length ? leads.map((lead) => (
-                <tr key={lead.id}>
-                  <td>{lead.full_name || '-'}</td>
-                  <td>{lead.role || '-'}</td>
-                  <td>{lead.company_name || '-'}</td>
-                  <td>{lead.email || '-'}</td>
-                  <td>{lead.phone_number || '-'}</td>
-                  <td style={{ maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={lead.facebook_url || ''}>
-                    {lead.facebook_url ? <a href={lead.facebook_url} target="_blank" rel="noreferrer">{lead.facebook_url}</a> : '-'}
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '2rem' }}>Loading leads...</td></tr>
+              ) : error || manualLeadsQuery.error || usersQuery.error ? (
+                <tr><td colSpan="8" role="alert" style={{ textAlign: 'center', color: '#b91c1c', padding: '2rem' }}>
+                  {error || manualLeadsQuery.error?.message || usersQuery.error?.message}
+                </td></tr>
+              ) : filteredLeads.length ? leadPagination.pageItems.map((item) => (
+                <tr key={item.id}>
+                  <td style={{ fontWeight: 600 }}>{item.full_name || '-'}</td>
+                  <td>{item.company_name || '-'}</td>
+                  <td>{item.email || '-'}</td>
+                  <td>{item.phone_number || '-'}</td>
+                  <td>{item.note || '-'}</td>
+                  <td>{item.owner?.employee_name || '-'}</td>
+                  <td>{formatDateTime(item.created_at)}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'center' }}>
+                      <button
+                        type="button"
+                        title="View full details"
+                        onClick={() => openViewModal(item)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '4px',
+                          color: '#2563eb',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          borderRadius: '4px',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eff6ff'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                      >
+                        <Eye size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        title="Edit lead"
+                        onClick={() => openEditModal(item)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '4px',
+                          color: '#0076FF',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          borderRadius: '4px',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete lead"
+                        onClick={() => openDeleteModal(item)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '4px',
+                          color: '#dc2626',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          borderRadius: '4px',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </td>
-                  <td>{lead.source || '-'}</td>
-                  <td>{lead.status || '-'}</td>
-                  <td>{formatIndiaDateTime(lead.extraction_date)}</td>
                 </tr>
               )) : (
-                <tr><td colSpan="9" style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>No leads found.</td></tr>
+                <tr>
+                  <td colSpan="8" style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>
+                    {searchTerm || leadTableFilters.hasFilters ? (
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 500 }}>No leads match the selected filters.</p>
+                        <button
+                          type="button"
+                          onClick={() => setSearchTerm('')}
+                          style={{
+                            marginTop: '0.5rem',
+                            background: 'none',
+                            border: 'none',
+                            color: '#0076FF',
+                            cursor: 'pointer',
+                            fontSize: '0.85rem',
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          Clear search filter
+                        </button>
+                      </div>
+                    ) : (
+                      'No manually added leads yet.'
+                    )}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
+        <TablePagination {...leadPagination} />
+      </div>
 
-        <div className="flex items-center justify-between mt-4">
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Page {page} of {totalPages} - {total} leads</span>
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Previous</Button>
-            <Button variant="secondary" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</Button>
+      {modalOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15, 23, 42, 0.45)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+          padding: '1rem',
+        }}>
+          <form
+            onSubmit={saveLead}
+            style={{
+              width: '100%',
+              maxWidth: '760px',
+              maxHeight: '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              background: '#ffffff',
+              borderRadius: '16px',
+              boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)',
+              border: '1px solid #e2e8f0',
+              overflow: 'hidden',
+              margin: 'auto',
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '1.25rem 1.75rem',
+              borderBottom: '1px solid #e2e8f0',
+              backgroundColor: '#f8fafc',
+            }}>
+              <div>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                  {editingId !== null ? 'Edit Lead' : 'Add Lead'}
+                </h2>
+                <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0.25rem 0 0' }}>
+                  Fields marked with <span style={{ color: '#ef4444', fontWeight: 700 }}>*</span> are required. All other fields are optional.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeModal}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#64748b',
+                  padding: '6px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background-color 0.15s, color 0.15s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#e2e8f0'; e.currentTarget.style.color = '#0f172a'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#64748b'; }}
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body: 2-Column Responsive Grid */}
+            <div style={{
+              padding: '1.5rem 1.75rem',
+              overflowY: 'auto',
+              flex: 1,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gap: '1rem 1.25rem',
+            }}>
+              {/* Assigned user field - ON TOP and MANDATORY */}
+              <div style={{
+                gridColumn: 'span 2',
+                display: 'flex',
+                flexDirection: 'column',
+                paddingBottom: '0.25rem',
+              }}>
+                <label
+                  htmlFor="manual-lead-owner"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: '#1e293b',
+                    marginBottom: '0.35rem',
+                  }}
+                >
+                  <span>Assigned user</span>
+                  <span style={{ color: '#ef4444', fontWeight: 700 }} title="Required field">*</span>
+                </label>
+                <select
+                  id="manual-lead-owner"
+                  required
+                  value={lead.user_id}
+                  onChange={(event) => setLead({ ...lead, user_id: event.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '8px',
+                    border: '1.5px solid #cbd5e1',
+                    fontSize: '0.875rem',
+                    color: '#0f172a',
+                    backgroundColor: '#ffffff',
+                    outline: 'none',
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+                  }}
+                >
+                  <option value="">Select assigned user...</option>
+                  {users.map((user) => <option key={user.id} value={user.id}>{user.employee_name}</option>)}
+                </select>
+              </div>
+
+              {LEAD_FIELDS.map((field) => {
+                const isFullWidth = field.fullWidth;
+                return (
+                  <div
+                    key={field.name}
+                    style={{
+                      gridColumn: isFullWidth ? 'span 2' : 'span 1',
+                      display: 'flex',
+                      flexDirection: 'column',
+                    }}
+                  >
+                    <label
+                      htmlFor={`manual-lead-${field.name}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '0.825rem',
+                        fontWeight: 600,
+                        color: '#334155',
+                        marginBottom: '0.35rem',
+                      }}
+                    >
+                      <span>{field.label}</span>
+                      {field.required ? (
+                        <span style={{ color: '#ef4444', fontWeight: 700 }} title="Required field">*</span>
+                      ) : (
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 400 }}>(optional)</span>
+                      )}
+                    </label>
+
+                    {field.select ? (
+                      <select
+                        id={`manual-lead-${field.name}`}
+                        value={lead[field.name]}
+                        onChange={(event) => setLead({ ...lead, [field.name]: event.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '0.65rem 0.85rem',
+                          borderRadius: '8px',
+                          border: '1.5px solid #cbd5e1',
+                          fontSize: '0.875rem',
+                          color: '#0f172a',
+                          backgroundColor: '#ffffff',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+                        }}
+                      >
+                        {(field.options || ['not sent', 'new', 'sent', 'failed']).map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                    ) : field.multiline ? (
+                      <textarea
+                        id={`manual-lead-${field.name}`}
+                        value={lead[field.name]}
+                        onChange={(event) => setLead({ ...lead, [field.name]: event.target.value })}
+                        maxLength={field.name === 'note' || field.name === 'address' ? 2000 : 255}
+                        rows={3}
+                        required={field.required}
+                        placeholder={field.placeholder || ''}
+                        style={{
+                          width: '100%',
+                          padding: '0.65rem 0.85rem',
+                          borderRadius: '8px',
+                          border: '1.5px solid #cbd5e1',
+                          fontSize: '0.875rem',
+                          color: '#0f172a',
+                          backgroundColor: '#ffffff',
+                          outline: 'none',
+                          resize: 'vertical',
+                          minHeight: '75px',
+                          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+                        }}
+                      />
+                    ) : (
+                      <input
+                        id={`manual-lead-${field.name}`}
+                        type={field.type || 'text'}
+                        value={lead[field.name]}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setLead((current) => {
+                            const next = { ...current, [field.name]: value };
+                            if (
+                              field.name === 'phone_number' &&
+                              (!current.whatsapp_number || current.whatsapp_number === current.phone_number)
+                            ) {
+                              next.whatsapp_number = value;
+                            }
+                            return next;
+                          });
+                        }}
+                        maxLength={255}
+                        required={field.required}
+                        placeholder={field.placeholder || ''}
+                        style={{
+                          width: '100%',
+                          padding: '0.65rem 0.85rem',
+                          borderRadius: '8px',
+                          border: '1.5px solid #cbd5e1',
+                          fontSize: '0.875rem',
+                          color: '#0f172a',
+                          backgroundColor: '#ffffff',
+                          outline: 'none',
+                          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+                        }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+
+              {error && (
+                <div style={{ gridColumn: 'span 2', padding: '0.75rem 1rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px' }}>
+                  <p role="alert" style={{ color: '#b91c1c', margin: 0, fontSize: '0.875rem', fontWeight: 500 }}>{error}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              display: 'flex',
+              gap: '0.75rem',
+              justifyContent: 'flex-end',
+              padding: '1.1rem 1.75rem',
+              borderTop: '1px solid #e2e8f0',
+              backgroundColor: '#f8fafc',
+            }}>
+              <Button type="button" variant="secondary" onClick={closeModal} disabled={saving}>Cancel</Button>
+              <Button type="submit" variant="primary" disabled={saving}>
+                {saving ? 'Saving...' : editingId !== null ? 'Save Changes' : 'Save Lead'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* View Full Details Modal */}
+      {viewModalOpen && viewingLead && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15, 23, 42, 0.45)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+          padding: '1rem',
+        }}>
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '720px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              background: '#ffffff',
+              borderRadius: '16px',
+              boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)',
+              border: '1px solid #e2e8f0',
+              overflow: 'hidden',
+              margin: 'auto',
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '1.25rem 1.75rem',
+              borderBottom: '1px solid #e2e8f0',
+              backgroundColor: '#f8fafc',
+            }}>
+              <div>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                  {viewingLead.full_name || 'Lead Details'}
+                </h2>
+                <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0.25rem 0 0' }}>
+                  {viewingLead.company_name ? `Company: ${viewingLead.company_name}` : 'Full contact profile and notes'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setViewModalOpen(false); setViewingLead(null); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#64748b',
+                  padding: '6px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '1.5rem 1.75rem', overflowY: 'auto', flex: 1 }}>
+              {/* Primary Contact Info Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                gap: '1rem 1.5rem',
+                marginBottom: '1.5rem',
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Full Name</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0f172a', marginTop: '2px' }}>
+                    {viewingLead.full_name || '-'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Company Name</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0f172a', marginTop: '2px' }}>
+                    {viewingLead.company_name || '-'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Email Address</div>
+                  <div style={{ fontSize: '0.95rem', color: '#0f172a', marginTop: '2px' }}>
+                    {viewingLead.email || '-'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Phone Number</div>
+                  <div style={{ fontSize: '0.95rem', color: '#0f172a', marginTop: '2px' }}>
+                    {viewingLead.phone_number || '-'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>WhatsApp Number</div>
+                  <div style={{ fontSize: '0.95rem', color: '#0f172a', marginTop: '2px' }}>
+                    {viewingLead.whatsapp_number || '-'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Role / Designation</div>
+                  <div style={{ fontSize: '0.95rem', color: '#0f172a', marginTop: '2px' }}>
+                    {viewingLead.role || '-'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Assigned User</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#2563eb', marginTop: '2px' }}>
+                    {viewingLead.owner?.employee_name || 'Unassigned'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Source</div>
+                  <div style={{ fontSize: '0.95rem', color: '#0f172a', marginTop: '2px' }}>
+                    {viewingLead.source || 'Manual Entry'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Email Status</div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: viewingLead.email_status === 'sent' ? '#047857' : '#64748b', marginTop: '2px', textTransform: 'capitalize' }}>
+                    {viewingLead.email_status || 'not sent'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Lead Status</div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', marginTop: '2px', textTransform: 'capitalize' }}>
+                    {viewingLead.status || 'new'}
+                  </div>
+                </div>
+
+                {viewingLead.address && (
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Address</div>
+                    <div style={{ fontSize: '0.9rem', color: '#334155', marginTop: '2px', whiteSpace: 'pre-line' }}>
+                      {viewingLead.address}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Social Profiles */}
+              {(viewingLead.linkedin_url || viewingLead.facebook_url) && (
+                <div style={{
+                  display: 'flex',
+                  gap: '1.5rem',
+                  marginBottom: '1.25rem',
+                  flexWrap: 'wrap',
+                }}>
+                  {viewingLead.linkedin_url && (
+                    <a
+                      href={viewingLead.linkedin_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        color: '#0076FF',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        textDecoration: 'none',
+                      }}
+                    >
+                      <span>LinkedIn Profile</span>
+                      <ExternalLink size={14} />
+                    </a>
+                  )}
+                  {viewingLead.facebook_url && (
+                    <a
+                      href={viewingLead.facebook_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        color: '#0076FF',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        textDecoration: 'none',
+                      }}
+                    >
+                      <span>Facebook Profile</span>
+                      <ExternalLink size={14} />
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Additional Information / Notes */}
+              {viewingLead.note && (
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Additional Information / Note</div>
+                  <div style={{
+                    background: '#f1f5f9',
+                    padding: '0.85rem 1rem',
+                    borderRadius: '8px',
+                    fontSize: '0.875rem',
+                    color: '#334155',
+                    whiteSpace: 'pre-line',
+                  }}>
+                    {viewingLead.note}
+                  </div>
+                </div>
+              )}
+
+              {/* Added timestamp */}
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+                Added on: {formatDateTime(viewingLead.created_at)}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: '0.75rem',
+              padding: '1rem 1.75rem',
+              borderTop: '1px solid #e2e8f0',
+              backgroundColor: '#f8fafc',
+            }}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => { setViewModalOpen(false); setViewingLead(null); }}
+              >
+                Close
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                icon={<Pencil size={15} />}
+                onClick={() => {
+                  const leadToEdit = viewingLead;
+                  setViewModalOpen(false);
+                  setViewingLead(null);
+                  openEditModal(leadToEdit);
+                }}
+              >
+                Edit Lead
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="dashboard-section mt-6">
-        <h2 className="section-title">Processing Logs</h2>
-        <div style={{ maxHeight: 180, overflow: 'auto', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-          {(googleStatus.logs || []).length ? googleStatus.logs.slice().reverse().map((entry, index) => (
-            <div key={`${entry.at}-${index}`}>{formatIndiaDateTime(entry.at)} - {entry.message}</div>
-          )) : <div>No scraper logs yet.</div>}
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '1rem',
+        }}>
+          <div className="dashboard-section" style={{ maxWidth: 440, width: '100%', margin: 0 }}>
+            <h2 className="section-title">Delete Lead</h2>
+            <p style={{ marginBottom: '1rem', color: '#334155', fontSize: '0.9rem' }}>
+              Are you sure you want to delete{' '}
+              <strong>{deletingLead?.full_name || deletingLead?.email || 'this lead'}</strong>?
+              This action cannot be undone.
+            </p>
+            {error && <p role="alert" style={{ color: '#b91c1c', marginBottom: '1rem' }}>{error}</p>}
+            <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => { setDeleteModalOpen(false); setDeletingLead(null); }}
+                disabled={deleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={confirmDelete}
+                disabled={deleting}
+                style={{ background: '#dc2626', borderColor: '#dc2626' }}
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

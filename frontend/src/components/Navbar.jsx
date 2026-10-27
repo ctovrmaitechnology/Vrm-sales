@@ -13,6 +13,7 @@ const Navbar = () => {
     if (path.includes('/linkedin')) return 'LinkedIn Automation';
     if (path.includes('/whatsapp')) return 'WhatsApp Campaigns';
     if (path.includes('/leads')) return 'Leads';
+    if (path.includes('/company')) return 'Company';
     if (path.includes('/email/upload')) return 'Upload Leads';
     if (path.includes('/email')) return 'Email Outreach';
     return 'Dashboard';

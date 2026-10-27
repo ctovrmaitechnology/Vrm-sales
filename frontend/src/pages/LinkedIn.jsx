@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Button from '../components/Button';
 import StatCard from '../components/StatCard';
+import TablePagination from '../components/TablePagination';
+import TableFilters from '../components/TableFilters';
+import useTableFilters from '../hooks/useTableFilters';
+import useTablePagination from '../hooks/useTablePagination';
 import {
   AlertTriangle,
   CheckCircle,
@@ -17,6 +21,14 @@ import {
 import { DEFAULT_PRODUCT, PRODUCTS } from '../config/products';
 
 const LINKEDIN_BASE_URL = import.meta.env.VITE_LINKEDIN_BASE_URL || '/linkedin-api';
+const LINKEDIN_FILTER_CONFIG = {
+  searchFields: ['full_name', 'profile_name', 'role', 'job_title', 'company_name', 'email', 'phone_number', 'linkedin_url'],
+  facets: [{
+    key: 'status',
+    label: 'Status',
+    field: (lead) => lead.current_status || lead.status,
+  }],
+};
 
 const initialStatus = {
   total_uploaded: 0,
@@ -43,6 +55,8 @@ const LinkedIn = () => {
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(DEFAULT_PRODUCT);
   const logsEndRef = useRef(null);
+  const leadsFilters = useTableFilters(leads, LINKEDIN_FILTER_CONFIG);
+  const leadsPagination = useTablePagination(leadsFilters.filteredItems);
 
   const botRunning = Boolean(status.activeBotRun);
 
@@ -240,6 +254,7 @@ const LinkedIn = () => {
 
         <div className="dashboard-section">
           <h2 className="section-title">Uploaded Queue</h2>
+          <TableFilters {...leadsFilters} searchPlaceholder="Search LinkedIn queue..." />
           <div className="table-container">
             <table>
               <thead>
@@ -253,7 +268,7 @@ const LinkedIn = () => {
                 </tr>
               </thead>
               <tbody>
-                {leads.slice(0, 12).map((lead) => (
+                {leadsPagination.pageItems.map((lead) => (
                   <tr key={lead.profile_id || lead.linkedin_url}>
                     <td>{lead.full_name || lead.profile_name || '-'}</td>
                     <td>{lead.role || lead.job_title || '-'}</td>
@@ -263,15 +278,16 @@ const LinkedIn = () => {
                     <td>{lead.current_status || lead.status || '-'}</td>
                   </tr>
                 ))}
-                {!leads.length && (
+                {!leadsFilters.filteredItems.length && (
                   <tr>
                     <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
-                      Upload an Excel file with a linkedin_url column to begin.
+                      {leadsFilters.hasFilters ? 'No leads match the selected filters.' : 'Upload an Excel file with a linkedin_url column to begin.'}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+            <TablePagination {...leadsPagination} />
           </div>
         </div>
       </div>

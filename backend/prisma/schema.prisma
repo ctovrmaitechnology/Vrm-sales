@@ -31,25 +31,26 @@ model lead_status {
   updated_at  DateTime? @db.Timestamptz(6)
 }
 model leads {
-  id              Int       @id @default(autoincrement())
-  full_name       String?
-  name            String?
-  email           String?   @unique
-  phone_number    String?
+  id              Int             @id @default(autoincrement())
+  full_name       String
   whatsapp_number String?
-  whatsapp_url    String?
   facebook_url    String?
   linkedin_url    String?
-  company         String?
   company_name    String?
+  phone_number    String?
+  email           String?         @unique
   role            String?
-  occupation      String?
   source          String?
-  status          String?
-  metadata        Json?
-  created_at      DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime? @db.Timestamptz(6)
-  country         String?
+  status          String?         @default("new")
+  note            String?
+  email_status    String          @default("not sent")
+  whatsapp_read   Boolean?        @default(false)
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?       @db.Timestamptz(6)
+  address         String?
+  user_id         Int?
+  owner           users?          @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  email_history   email_history[]
 }
 
 model EmailLeads {
@@ -81,10 +82,63 @@ model WhatsAppLeads {
   project            String?
   status             String?
   whatsapp_status    String?
+  read               Boolean   @default(false)
   follow_up_count    Int       @default(0)
   click_count        Int       @default(0)
   demo_click_count   Int       @default(0)
   video_click_count  Int       @default(0)
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
   updated_at         DateTime? @db.Timestamptz(6)
+}
+
+model company {
+  id           Int      @id @default(autoincrement())
+  full_name    String
+  whatsapp_number String?
+  facebook_url String?
+  linkedin_url String?
+  company_name String?
+  phone_number String?
+  email        String?
+  role         String?
+  source       String?
+  status       String?  @default("new")
+  note         String?
+  email_status String   @default("not sent")
+  whatsapp_read Boolean? @default(false)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime? @db.Timestamptz(6)
+  address      String?
+  user_id      Int?
+  owner        users?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  email_history email_history[]
+}
+
+model users {
+  id            Int             @id @default(autoincrement())
+  employee_name String
+  is_active     Boolean         @default(true)
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime?       @db.Timestamptz(6)
+  leads         leads[]
+  companies     company[]
+  email_history email_history[]
+}
+
+model email_history {
+  id                  Int       @id @default(autoincrement())
+  user_id             Int?
+  lead_id             Int?
+  company_id          Int?
+  recipient_email     String
+  event_type          String    @default("initial")
+  status              String
+  attempt_number      Int       @default(1)
+  provider_message_id String?
+  error_message       String?
+  attempted_at        DateTime  @default(now()) @db.Timestamptz(6)
+  sent_at             DateTime? @db.Timestamptz(6)
+  user                users?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  lead                leads?    @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+  company             company?  @relation(fields: [company_id], references: [id], onDelete: SetNull)
 }

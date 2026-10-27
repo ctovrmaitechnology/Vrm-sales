@@ -8,8 +8,10 @@
     /* Light gray background */
     min-height: 100vh;
     width: 100%;
+    max-width: 100%;
     position: relative;
     font-family: inherit;
+    box-sizing: border-box;
 }
 
 .wa-container {
@@ -17,6 +19,8 @@
     max-width: 80rem;
     /* Equivalent to max-w-7xl */
     margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* 2. Header */
@@ -155,10 +159,30 @@
     border: 1px solid #e5e7eb;
     box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
     overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .wa-table-scroll {
     overflow-x: auto;
+    width: 100%;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+}
+
+.wa-table-scroll::-webkit-scrollbar {
+    height: 6px;
+}
+
+.wa-table-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.wa-table-scroll::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 4px;
 }
 
 .wa-table {

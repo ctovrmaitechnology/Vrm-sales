@@ -94,7 +94,8 @@ Best regards,
 VRM AI Technology (OPC) Pvt. Ltd.`
       }
     ],
-    whatsappTemplate: process.env.WHATSAPP_TEMPLATE_WORKFLOW_AI || 'workflow_ai_v5'
+    whatsappTemplate: process.env.WHATSAPP_TEMPLATE_WORKFLOW_AI || 'workflow',
+    whatsappLanguage: 'en'
   },
 
   election_survey: {

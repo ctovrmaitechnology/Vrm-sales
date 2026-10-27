@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-const { getFollowUpLeads, getLeadByEmail, updateEmailLeadStatus, updateUnifiedLeadStatus } = require('../unifiedDb');
+const prisma = require('../prismaClient');
+const { getFollowUpLeads, getLeadByEmail, updateEmailLeadStatus, updateUnifiedLeadStatus, updateUnifiedLeadEmailStatus, recordEmailHistory } = require('../unifiedDb');
 const { sendFollowUp1, sendFollowUp2, sendFollowUp3 } = require('./emailService');
 
 let lastFollowUpDbWarningAt = 0;
@@ -75,6 +75,8 @@ async function runFollowUpEmailCheck() {
 
       eligible++;
 
+      let brevoResult;
+      const eventType = `follow_up_${sendFollowUp}`;
       try {
         user = await getLeadByEmail(user.email);
 
@@ -99,35 +101,44 @@ async function runFollowUpEmailCheck() {
           continue;
         }
 
-        let brevoResult;
-
         if (sendFollowUp === "1") {
           brevoResult = await sendFollowUp1(user);
-          if (user.isEmailLead) {
-             await updateEmailLeadStatus(user.email, "sent", "follow_up_1_sent");
-          } else {
+          try {
+            await recordEmailHistory({ email: user.email, status: 'sent', eventType, providerMessageId: brevoResult?.messageId || null });
+          } catch (historyError) {
+            console.error(`Failed to record follow-up history for ${user.email}:`, historyError.message);
+          }
+          await updateUnifiedLeadEmailStatus(user.email, "sent");
+          if (!user.isEmailLead) {
              await updateUnifiedLeadStatus(user, "email", "sent", "follow_up_1_sent", { followUp1Sent: true, lastEmailSentAt: new Date() });
           }
         } else if (sendFollowUp === "2") {
           brevoResult = await sendFollowUp2(user);
-          if (user.isEmailLead) {
-             await updateEmailLeadStatus(user.email, "sent", "follow_up_2_sent");
-          } else {
+          try {
+            await recordEmailHistory({ email: user.email, status: 'sent', eventType, providerMessageId: brevoResult?.messageId || null });
+          } catch (historyError) {
+            console.error(`Failed to record follow-up history for ${user.email}:`, historyError.message);
+          }
+          await updateUnifiedLeadEmailStatus(user.email, "sent");
+          if (!user.isEmailLead) {
              await updateUnifiedLeadStatus(user, "email", "sent", "follow_up_2_sent", { followUp2Sent: true, lastEmailSentAt: new Date() });
           }
         } else if (sendFollowUp === "3") {
           brevoResult = await sendFollowUp3(user);
-          if (user.isEmailLead) {
-             await updateEmailLeadStatus(user.email, "sent", "follow_up_3_sent");
-          } else {
+          try {
+            await recordEmailHistory({ email: user.email, status: 'sent', eventType, providerMessageId: brevoResult?.messageId || null });
+          } catch (historyError) {
+            console.error(`Failed to record follow-up history for ${user.email}:`, historyError.message);
+          }
+          await updateUnifiedLeadEmailStatus(user.email, "sent");
+          if (!user.isEmailLead) {
              await updateUnifiedLeadStatus(user, "email", "sent", "follow_up_3_sent", { followUp3Sent: true, lastEmailSentAt: new Date() });
           }
 
           const latestLead = await getLeadByEmail(user.email);
           if (latestLead && ['sent', 'clicked'].includes(latestLead.Status)) {
-            if (user.isEmailLead) {
-               await updateEmailLeadStatus(user.email, "follow_up_sent", "follow_up_completed");
-            } else {
+            await updateUnifiedLeadEmailStatus(user.email, "follow_up_sent");
+            if (!user.isEmailLead) {
                await updateUnifiedLeadStatus(latestLead, "email", "follow_up_sent", "follow_up_completed", { followUpCompleted: true });
             }
           }
@@ -141,6 +152,18 @@ async function runFollowUpEmailCheck() {
 
       } catch (error) {
         failed++;
+        if (!brevoResult) {
+          try {
+            await recordEmailHistory({
+              email: user.email,
+              status: 'failed',
+              eventType,
+              errorMessage: error.message
+            });
+          } catch (historyError) {
+            console.error(`Failed to record follow-up failure for ${user.email}:`, historyError.message);
+          }
+        }
         console.log(
           `Follow-up ${sendFollowUp} failed for ${user.email}: ${error.message}`
         );
