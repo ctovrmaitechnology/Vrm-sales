@@ -986,22 +986,24 @@ async function updateWhatsAppLeadStatus(whatsappNumber, status, action, extra = 
       } : {})
     };
 
-    // Store company contact details in the WhatsApp status history metadata.
-    try {
-      await prisma.lead_status.create({
-        data: {
-          lead_id: manualLead ? manualLead.id : null,
-          email: manualLead?.email || companyRecord?.email || extra.user?.email || rawNumber,
-          channel: 'whatsapp',
-          action: action || (status === 'failed' ? 'failed' : 'template_sent'),
-          status: status || 'sent',
-          click_count: extra.clicked ? 1 : 0,
-          metadata: Object.keys(statusMetadata).length > 0 ? statusMetadata : null,
-          created_at: new Date()
-        }
-      });
-    } catch (err) {
-      dbLog(`lead_status create notice: ${err.message}`);
+    // Chat and button events share one conversation row; other status changes remain event rows.
+    if (!extra.skipStatusHistory) {
+      try {
+        await prisma.lead_status.create({
+          data: {
+            lead_id: manualLead ? manualLead.id : null,
+            email: manualLead?.email || companyRecord?.email || extra.user?.email || rawNumber,
+            channel: 'whatsapp',
+            action: action || (status === 'failed' ? 'failed' : 'template_sent'),
+            status: status || 'sent',
+            click_count: extra.clicked ? 1 : 0,
+            metadata: Object.keys(statusMetadata).length > 0 ? statusMetadata : null,
+            created_at: new Date()
+          }
+        });
+      } catch (err) {
+        dbLog(`lead_status create notice: ${err.message}`);
+      }
     }
 
     if (manualLead) {
@@ -1113,12 +1115,326 @@ async function updateWhatsAppLeadStatus(whatsappNumber, status, action, extra = 
       }
     }
 
-    dbLog(`DB_UPDATE_SUCCESS WhatsAppLeads number=${whatsappNumber} action=${action}`);
+    if (!extra.quiet) {
+      dbLog(`DB_UPDATE_SUCCESS WhatsAppLeads number=${whatsappNumber} action=${action}`);
+    }
     return updated || manualLead || companyRecord;
   } catch (error) {
     dbLog(`DB_ERROR updateWhatsAppLeadStatus number=${whatsappNumber} ${error.message}`);
     return null;
   }
+}
+
+async function recordWhatsAppChat(whatsappNumber, message, contactName) {
+  const contact = await findWhatsAppContactByNumber(whatsappNumber);
+  if (!contact.last10) return null;
+  const createdAtSeconds = Number(message?.timestamp);
+  const parsedCreatedAt = Number.isFinite(createdAtSeconds) && createdAtSeconds > 0
+    ? new Date(createdAtSeconds * 1000)
+    : null;
+  const createdAt = parsedCreatedAt && !Number.isNaN(parsedCreatedAt.getTime())
+    ? parsedCreatedAt
+    : new Date();
+  const messageType = String(message?.type || 'unknown');
+  const chat = {
+    from: contact.rawNumber,
+    contactName: contactName || null,
+    messageId: message?.id || null,
+    timestamp: message?.timestamp || createdAt.toISOString(),
+    type: messageType,
+  };
+
+  if (messageType === 'text') {
+    chat.text = message.text?.body || '';
+  } else if (messageType === 'interactive') {
+    chat.interactive = message.interactive || null;
+  } else if (messageType === 'button') {
+    chat.button = message.button || null;
+  } else {
+    chat.content = message[messageType] || null;
+  }
+
+  return upsertWhatsAppConversationEvent(contact, { kind: 'message', chat }, createdAt);
+}
+
+async function findWhatsAppContactByNumber(whatsappNumber) {
+  const rawNumber = String(whatsappNumber || '').trim();
+  const digits = rawNumber.replace(/\D/g, '');
+  const last10 = digits.slice(-10);
+  if (!rawNumber || !last10) return { rawNumber, digits, last10, manualLead: null, companyRecord: null, whatsappLead: null };
+
+  const phoneMatch = {
+    OR: [
+      { whatsapp_number: { contains: last10 } },
+      { phone_number: { contains: last10 } },
+    ],
+  };
+  const [manualLead, companyRecord, whatsappLead] = await Promise.all([
+    prisma.leads.findFirst({ where: phoneMatch }),
+    prisma.company.findFirst({ where: phoneMatch }),
+    prisma.whatsAppLeads.findFirst({ where: { whatsapp_number: { contains: last10 } } }),
+  ]);
+  return { rawNumber, digits, last10, manualLead, companyRecord, whatsappLead };
+}
+
+function getWhatsAppContactMetadata(contact) {
+  const metadata = {};
+  if (contact.companyRecord) {
+    metadata.company = {
+      id: contact.companyRecord.id,
+      name: contact.companyRecord.company_name || contact.companyRecord.full_name || null,
+      phone: contact.companyRecord.whatsapp_number || contact.companyRecord.phone_number || contact.rawNumber,
+    };
+  } else if (contact.manualLead) {
+    metadata.lead = {
+      id: contact.manualLead.id,
+      name: contact.manualLead.full_name,
+      phone: contact.manualLead.whatsapp_number || contact.manualLead.phone_number || contact.rawNumber,
+    };
+  }
+  return metadata;
+}
+
+function getWhatsAppConversationIdentity(contact) {
+  return contact.manualLead?.email
+    || contact.companyRecord?.email
+    || contact.whatsappLead?.email
+    || contact.last10;
+}
+
+async function upsertWhatsAppConversationEvent(contact, event, eventDate = new Date()) {
+  const identity = getWhatsAppConversationIdentity(contact);
+  const chatEvent = event.kind === 'message' ? event.chat : null;
+  const buttonEvent = event.kind === 'button' ? event.button : null;
+
+  return prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`
+      SELECT 1::int AS locked
+      FROM (SELECT pg_advisory_xact_lock(hashtext(${contact.last10}))) AS contact_lock
+    `;
+
+    const existing = await transaction.lead_status.findFirst({
+      where: {
+        channel: 'whatsapp',
+        action: 'whatsapp_conversation',
+        OR: [
+          { email: identity },
+          { email: { contains: contact.last10 } },
+        ],
+      },
+      orderBy: { updated_at: 'desc' },
+    });
+    const metadata = existing?.metadata && typeof existing.metadata === 'object'
+      ? { ...existing.metadata }
+      : getWhatsAppContactMetadata(contact);
+    if (!metadata.company && !metadata.lead) {
+      Object.assign(metadata, getWhatsAppContactMetadata(contact));
+    }
+
+    const chatHistory = Array.isArray(metadata.Chat)
+      ? [...metadata.Chat]
+      : (metadata.Chat && typeof metadata.Chat === 'object' ? [metadata.Chat] : []);
+    const buttonHistory = Array.isArray(metadata.Buttons)
+      ? [...metadata.Buttons]
+      : (metadata.Button && typeof metadata.Button === 'object' ? [metadata.Button] : []);
+
+    if (chatEvent) {
+      const existingMessageIndex = chatEvent.messageId
+        ? chatHistory.findIndex((item) => item?.messageId === chatEvent.messageId)
+        : -1;
+      if (existingMessageIndex >= 0) {
+        const previousMessage = chatHistory[existingMessageIndex];
+        const statusPriority = { sent: 1, delivered: 2, read: 3, failed: 4 };
+        const previousPriority = statusPriority[previousMessage.status] || 0;
+        const nextPriority = statusPriority[chatEvent.status] || 0;
+        const mergedMessage = {
+          ...previousMessage,
+          ...chatEvent,
+        };
+        if (chatEvent.status && previousMessage.timestamp) {
+          mergedMessage.timestamp = previousMessage.timestamp;
+        }
+        if (previousPriority > nextPriority) {
+          mergedMessage.status = previousMessage.status;
+          mergedMessage.statusTimestamp = previousMessage.statusTimestamp;
+        }
+        chatHistory[existingMessageIndex] = {
+          ...mergedMessage,
+        };
+      } else {
+        chatHistory.push(chatEvent);
+      }
+    }
+    if (buttonEvent) {
+      const alreadyStored = buttonEvent.eventId
+        && buttonHistory.some((item) => item?.eventId === buttonEvent.eventId);
+      if (!alreadyStored) buttonHistory.push(buttonEvent);
+    }
+    metadata.Chat = chatHistory;
+    delete metadata.Button;
+    if (buttonHistory.length) metadata.Buttons = buttonHistory;
+
+    const data = {
+      lead_id: contact.manualLead?.id || existing?.lead_id || null,
+      email: identity,
+      channel: 'whatsapp',
+      action: 'whatsapp_conversation',
+      status: 'active',
+      metadata,
+      updated_at: new Date(),
+    };
+    if (existing) {
+      return transaction.lead_status.update({
+        where: { id: existing.id },
+        data,
+      });
+    }
+    return transaction.lead_status.create({
+      data: { ...data, created_at: eventDate },
+    });
+  });
+}
+
+async function recordWhatsAppButtonEvent(whatsappNumber, button) {
+  const contact = await findWhatsAppContactByNumber(whatsappNumber);
+  if (!contact.last10) return null;
+  return upsertWhatsAppConversationEvent(contact, {
+    kind: 'button',
+    button: {
+      name: button.name,
+      url: button.url,
+      timestamp: button.timestamp || new Date().toISOString(),
+      eventId: button.eventId || null,
+    },
+  }, new Date(button.timestamp || Date.now()));
+}
+
+async function recordWhatsAppMessageStatus(whatsappNumber, statusUpdate) {
+  const contact = await findWhatsAppContactByNumber(whatsappNumber);
+  const messageId = String(statusUpdate?.id || '').trim();
+  const status = String(statusUpdate?.status || '').trim().toLowerCase();
+  if (!contact.last10 || !messageId || !status) return null;
+
+  const timestampSeconds = Number(statusUpdate.timestamp);
+  const timestamp = Number.isFinite(timestampSeconds) && timestampSeconds > 0
+    ? new Date(timestampSeconds * 1000).toISOString()
+    : new Date().toISOString();
+  const error = statusUpdate.errors?.[0];
+  return upsertWhatsAppConversationEvent(contact, {
+    kind: 'message',
+    chat: {
+      from: process.env.PHONE_NUMBER_ID || null,
+      to: contact.rawNumber,
+      direction: 'outbound',
+      messageId,
+      timestamp,
+      status,
+      statusTimestamp: timestamp,
+      ...(error ? {
+        error: {
+          code: error.code || null,
+          title: error.title || null,
+          details: error.error_data?.details || error.message || null,
+        },
+      } : {}),
+    },
+  }, new Date(timestamp));
+}
+
+async function getWhatsAppConversation(whatsappNumber) {
+  const contact = await findWhatsAppContactByNumber(whatsappNumber);
+  if (!contact.last10) return [];
+
+  const emails = [
+    contact.manualLead?.email,
+    contact.companyRecord?.email,
+    contact.whatsappLead?.email,
+  ].filter(Boolean);
+  const statusFilters = [
+    { email: { contains: contact.last10 } },
+    ...(emails.length ? [{ email: { in: emails } }] : []),
+    ...(contact.manualLead ? [{ lead_id: contact.manualLead.id }] : []),
+  ];
+  const history = await prisma.lead_status.findMany({
+    where: {
+      channel: 'whatsapp',
+      OR: statusFilters,
+    },
+    orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+  });
+
+  const events = history.flatMap((entry) => {
+    const metadata = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {};
+    const events = [];
+    if (metadata.Chat && typeof metadata.Chat === 'object') {
+      const chats = Array.isArray(metadata.Chat) ? metadata.Chat : [metadata.Chat];
+      chats.forEach((chat, index) => {
+        const interactiveReply = chat.interactive?.button_reply?.title;
+        const buttonReply = chat.button?.text || chat.button?.payload;
+        const body = chat.text || interactiveReply || buttonReply || '';
+        const timestampSeconds = Number(chat.timestamp);
+        const timestamp = Number.isFinite(timestampSeconds) && timestampSeconds > 0
+          ? new Date(timestampSeconds * 1000)
+          : (chat.timestamp || entry.created_at);
+        events.push({
+          id: `chat-${entry.id}-${index}`,
+          kind: 'message',
+          direction: chat.direction || (entry.action === 'chat_sent' ? 'outbound' : 'inbound'),
+          text: body || (chat.type && chat.type !== 'text' ? `[${chat.type} message]` : ''),
+          type: chat.type || 'text',
+          interactive: chat.interactive || null,
+          status: chat.status || null,
+          statusTimestamp: chat.statusTimestamp || null,
+          error: chat.error || null,
+          timestamp,
+        });
+      });
+    }
+
+    if (metadata.Button && typeof metadata.Button === 'object') {
+      events.push({
+        id: `button-${entry.id}`,
+        kind: 'button',
+        name: metadata.Button.name || 'Button clicked',
+        timestamp: entry.created_at,
+      });
+    }
+    if (Array.isArray(metadata.Buttons)) {
+      metadata.Buttons.forEach((button, index) => {
+        events.push({
+          id: `button-${entry.id}-${index}`,
+          kind: 'button',
+          name: button.name || 'Button clicked',
+          timestamp: button.timestamp || entry.created_at,
+        });
+      });
+    }
+    return events;
+  });
+  return events.sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
+}
+
+async function recordWhatsAppOutboundChat(whatsappNumber, text, messageId, messageDetails = null) {
+  const contact = await findWhatsAppContactByNumber(whatsappNumber);
+  if (!contact.last10) throw new Error('A valid WhatsApp phone number is required.');
+
+  const timestamp = new Date();
+  return upsertWhatsAppConversationEvent(contact, {
+    kind: 'message',
+    chat: {
+      from: process.env.PHONE_NUMBER_ID || null,
+      to: contact.rawNumber,
+      direction: 'outbound',
+      messageId: messageId || null,
+      timestamp: timestamp.toISOString(),
+      type: messageDetails?.type === 'cta_url' ? 'interactive' : (messageDetails?.type || 'text'),
+      text,
+      ...(messageDetails?.type === 'cta_url' || messageDetails?.type === 'interactive'
+        ? { interactive: { ...messageDetails, type: 'cta_url' } }
+        : {}),
+      ...(messageDetails?.templateName ? { templateName: messageDetails.templateName } : {}),
+    },
+  }, timestamp);
 }
 
 async function getEmailLeadByEmail(email) {
@@ -1370,6 +1686,11 @@ module.exports = {
   updateEmailLeadStatus,
   updateUnifiedLeadEmailStatus,
   updateWhatsAppLeadStatus,
+  recordWhatsAppChat,
+  recordWhatsAppButtonEvent,
+  recordWhatsAppMessageStatus,
+  getWhatsAppConversation,
+  recordWhatsAppOutboundChat,
   syncCompanyEmailLead,
   getEmailLeadByEmail,
   getWhatsAppLeadByNumber,

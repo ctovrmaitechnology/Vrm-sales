@@ -364,6 +364,65 @@ async function getWhatsAppLeads(req, res) {
       unique.push(lead);
     }
 
+    const contactByIdentifier = new Map();
+    const contactEmails = new Set();
+    const contactPhoneSuffixes = new Set();
+    for (const lead of unique) {
+      const phone = String(lead.whatsappNumber || lead.phoneNumber || lead.phone || '').trim();
+      const digits = phone.replace(/\D/g, '');
+      const phoneKey = digits.length >= 10 ? digits.slice(-10) : phone;
+      if (phoneKey) {
+        contactByIdentifier.set(phoneKey, lead);
+        contactPhoneSuffixes.add(phoneKey);
+      }
+      if (lead.email) {
+        const email = String(lead.email).trim().toLowerCase();
+        contactByIdentifier.set(email, lead);
+        contactEmails.add(email);
+      }
+    }
+
+    const statusIdentityFilters = [
+      ...(contactEmails.size ? [{ email: { in: [...contactEmails] } }] : []),
+      ...[...contactPhoneSuffixes].map((suffix) => ({ email: { contains: suffix } })),
+    ];
+    const conversationStatuses = statusIdentityFilters.length
+      ? await prisma.lead_status.findMany({
+        where: {
+          channel: 'whatsapp',
+          action: { in: ['chat_received', 'button_reply_received', 'whatsapp_conversation', 'demo_clicked', 'video_clicked'] },
+          OR: statusIdentityFilters,
+        },
+        select: { email: true, action: true, metadata: true },
+      })
+      : [];
+    for (const status of conversationStatuses) {
+      const identifier = String(status.email || '').trim().toLowerCase();
+      const digits = identifier.replace(/\D/g, '');
+      const contact = contactByIdentifier.get(identifier)
+        || (digits.length >= 10 ? contactByIdentifier.get(digits.slice(-10)) : null);
+      if (!contact) continue;
+
+      const chatHistory = status.metadata?.Chat;
+      const hasInboundChat = Array.isArray(chatHistory)
+        ? chatHistory.some((chat) => chat?.direction !== 'outbound')
+        : Boolean(chatHistory && chatHistory.direction !== 'outbound');
+      if (
+        status.action === 'chat_received' ||
+        status.action === 'button_reply_received' ||
+        (status.action === 'whatsapp_conversation' && hasInboundChat)
+      ) {
+        contact.hasWhatsAppReply = true;
+      }
+      if (
+        status.action === 'demo_clicked' ||
+        status.action === 'video_clicked' ||
+        status.metadata?.Button
+      ) {
+        contact.hasWhatsAppButtonClick = true;
+      }
+    }
+
     res.json(unique);
   } catch (err) {
     console.error("Failed to fetch WhatsApp leads:", err.message);

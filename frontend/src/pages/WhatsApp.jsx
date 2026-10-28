@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Send, Loader2, X, RefreshCw, CheckCheck } from 'lucide-react';
 import CampaignProgressWidget from '../components/CampaignProgressWidget';
@@ -51,6 +51,15 @@ const WhatsApp = () => {
       { key: 'addedBy', label: 'Added by', field: 'createdByName' },
       { key: 'source', label: 'Source', field: 'source' },
       {
+        key: 'replied',
+        label: 'Replied',
+        field: (lead) => lead.hasWhatsAppReply ? 'replied' : 'not replied',
+        options: [
+          { value: 'replied', label: 'Replied' },
+          { value: 'not replied', label: 'Not replied' },
+        ],
+      },
+      {
         key: 'status',
         label: 'Status',
         field: (lead) => {
@@ -81,9 +90,60 @@ const WhatsApp = () => {
   const [campaignRunning, setCampaignRunning] = useState(false);
   const [campaignMessage, setCampaignMessage] = useState('');
   const [modalSearchTerm, setModalSearchTerm] = useState('');
+  const [chatLead, setChatLead] = useState(null);
+  const [chatDraft, setChatDraft] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const [chatError, setChatError] = useState('');
+  const chatMessagesRef = useRef(null);
 
   const getPhone = (lead) => String(lead?.whatsappNumber || lead?.phoneNumber || lead?.phone || '').trim();
   const hasPhone = (lead) => Boolean(getPhone(lead));
+  const chatPhone = getPhone(chatLead);
+  const conversationQuery = useQuery({
+    queryKey: ['whatsapp-conversation', chatPhone],
+    enabled: Boolean(chatPhone),
+    queryFn: async () => {
+      const response = await fetch(apiUrl(`/api/whatsapp/conversation/${encodeURIComponent(chatPhone)}`));
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to load conversation.');
+      if (!Array.isArray(data)) throw new Error('The conversation API returned an invalid response.');
+      return data;
+    },
+    refetchInterval: chatPhone ? 4000 : false,
+    refetchIntervalInBackground: false,
+  });
+
+  useEffect(() => {
+    const messages = chatMessagesRef.current;
+    if (messages) messages.scrollTop = messages.scrollHeight;
+  }, [conversationQuery.data]);
+
+  const sendChatMessage = async (event) => {
+    event.preventDefault();
+    const message = chatDraft.trim();
+    if (!chatPhone || !message || chatSending) return;
+
+    setChatSending(true);
+    setChatError('');
+    try {
+      const response = await fetch(apiUrl(`/api/whatsapp/conversation/${encodeURIComponent(chatPhone)}/messages`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'WhatsApp could not send this message.');
+      setChatDraft('');
+      await Promise.all([
+        conversationQuery.refetch(),
+        queryClient.invalidateQueries({ queryKey: ['whatsapp-leads'] }),
+      ]);
+    } catch (error) {
+      setChatError(error.message || 'WhatsApp could not send this message.');
+    } finally {
+      setChatSending(false);
+    }
+  };
 
   const dashboardData = useMemo(() => {
     const sentList = leads.filter((lead) => lead.status === 'sent' || lead.whatsappStatus === 'sent');
@@ -202,7 +262,7 @@ const WhatsApp = () => {
               <th>Assigned User</th>
               <th>Phone Number</th>
               <th className="wa-text-center">Sent Status</th>
-              <th className="wa-text-center">Not Sent Reason</th>
+              <th className="wa-text-center">Conversation</th>
               {tableType === 'sent' && <th className="wa-text-center">Read</th>}
               <th className="wa-text-right">Actions</th>
             </tr>
@@ -211,7 +271,6 @@ const WhatsApp = () => {
             {tableLeads.length > 0 ? tablePagination.pageItems.map((lead) => {
               const phone = getPhone(lead);
               const isSent = lead.whatsappStatus === 'sent' || lead.status === 'sent';
-              const isFailed = lead.whatsappStatus === 'failed' || lead.status === 'failed';
               const isCompany = lead.isCompanyContact || lead.type === 'Company';
               const isChecked = Boolean(phone && selectedContacts.has(phone));
 
@@ -241,13 +300,25 @@ const WhatsApp = () => {
                     {isSent ? <span className="wa-badge wa-badge-blue">Sent</span> : <span className="wa-badge wa-badge-gray">Not Sent</span>}
                   </td>
                   <td className="wa-text-center">
-                    {!isSent ? (
-                      <span className={isFailed ? 'wa-badge wa-badge-red' : 'wa-badge wa-badge-gray'}
-                        title={lead.failureReason || (isFailed ? 'Message undeliverable' : 'Not Sent')}
-                        style={{ maxWidth: '170px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>
-                        {isFailed ? (lead.failureReason || 'Message undeliverable') : 'Not Sent'}
-                      </span>
-                    ) : <span style={{ color: '#9ca3af' }}>-</span>}
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setChatLead(lead);
+                        setChatDraft('');
+                        setChatError('');
+                      }}
+                      disabled={!phone}
+                      style={{
+                        padding: '0.3rem 0.7rem',
+                        fontSize: '0.8rem',
+                        ...(lead.hasWhatsAppReply
+                          ? { backgroundColor: '#16a34a', borderColor: '#16a34a', color: '#fff' }
+                          : {}),
+                      }}
+                    >
+                      View
+                    </button>
                   </td>
                   {tableType === 'sent' && (
                     <td className="wa-text-center">
@@ -808,6 +879,176 @@ const WhatsApp = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {chatLead && (
+        <div
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !chatSending) setChatLead(null);
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.5)',
+            backdropFilter: 'blur(2px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 60,
+            padding: '1rem',
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label={`WhatsApp conversation with ${chatLead.name || chatPhone}`}
+            style={{
+              background: '#f0f2f5',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '620px',
+              height: 'min(720px, 90vh)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            <header style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '1rem 1.25rem',
+              background: '#fff',
+              borderBottom: '1px solid #e5e7eb',
+            }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1rem', color: '#1f2937' }}>{chatLead.name || 'WhatsApp contact'}</h2>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{chatPhone}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setChatLead(null)}
+                disabled={chatSending}
+                aria-label="Close conversation"
+                style={{ background: 'transparent', border: 0, cursor: 'pointer', color: '#64748b', padding: '0.3rem' }}
+              >
+                <X size={20} />
+              </button>
+            </header>
+
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.6rem',
+            }} ref={chatMessagesRef}>
+              {conversationQuery.isLoading ? (
+                <div style={{ margin: 'auto', color: '#64748b' }}>Loading conversation...</div>
+              ) : conversationQuery.error ? (
+                <div role="alert" style={{ margin: 'auto', color: '#b91c1c' }}>{conversationQuery.error.message}</div>
+              ) : (conversationQuery.data || EMPTY_LIST).length === 0 ? (
+                <div style={{ margin: 'auto', textAlign: 'center', color: '#64748b' }}>
+                  No saved messages yet. New incoming and outgoing messages will appear here.
+                </div>
+              ) : (conversationQuery.data || EMPTY_LIST).map((item) => {
+                if (item.kind === 'button') {
+                  return (
+                    <div key={item.id} style={{ textAlign: 'center', color: '#6b7280', fontSize: '0.78rem', padding: '0.2rem' }}>
+                      {item.name} clicked · {new Date(item.timestamp).toLocaleString()}
+                    </div>
+                  );
+                }
+                const isOutbound = item.direction === 'outbound';
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      alignSelf: isOutbound ? 'flex-end' : 'flex-start',
+                      maxWidth: '82%',
+                      padding: '0.65rem 0.8rem',
+                      borderRadius: '10px',
+                      background: isOutbound ? '#d9fdd3' : '#fff',
+                      color: '#1f2937',
+                      boxShadow: '0 1px 1px rgba(0,0,0,0.08)',
+                      whiteSpace: 'pre-wrap',
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    <div>{item.text || '[message]'}</div>
+                    {item.interactive?.type === 'cta_url' && item.interactive.url && (
+                      <a
+                        href={item.interactive.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'block',
+                          marginTop: '0.55rem',
+                          padding: '0.55rem 0.8rem',
+                          borderRadius: '8px',
+                          background: '#16a34a',
+                          color: '#fff',
+                          textAlign: 'center',
+                          textDecoration: 'none',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {item.interactive.displayText || 'Open link'}
+                      </a>
+                    )}
+                    <time style={{ display: 'block', marginTop: '0.25rem', color: '#64748b', fontSize: '0.68rem', textAlign: 'right' }}>
+                      {new Date(item.timestamp).toLocaleString()}
+                    </time>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ background: '#fff', borderTop: '1px solid #e5e7eb', padding: '0.75rem 1rem' }}>
+              <p style={{ margin: '0 0 0.5rem', color: '#64748b', fontSize: '0.72rem' }}>
+                Free-form WhatsApp messages may only be sent during the customer-service window. Meta may require an approved template outside that window.
+              </p>
+              {chatError && <div role="alert" style={{ color: '#b91c1c', fontSize: '0.82rem', marginBottom: '0.5rem' }}>{chatError}</div>}
+              <form onSubmit={sendChatMessage} style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem' }}>
+                <textarea
+                  aria-label="Write a WhatsApp message"
+                  value={chatDraft}
+                  onChange={(event) => setChatDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      event.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  maxLength={4096}
+                  rows={2}
+                  placeholder="Type a message..."
+                  style={{
+                    flex: 1,
+                    resize: 'none',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '20px',
+                    padding: '0.65rem 0.9rem',
+                    font: 'inherit',
+                    outlineColor: '#22c55e',
+                  }}
+                />
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={chatSending || !chatDraft.trim()}
+                  aria-label="Send WhatsApp message"
+                  style={{ minWidth: '44px', height: '44px', borderRadius: '50%', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  {chatSending ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+                </button>
+              </form>
+            </div>
+          </section>
         </div>
       )}
 

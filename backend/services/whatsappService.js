@@ -2,7 +2,10 @@ const axios = require('axios');
 const { getCampaign } = require('../productCampaigns');
 const { getFirstName, isWhatsAppEnabled, logWhatsAppDisabled } = require('../utils/helpers');
 const { encodeLeadRef } = require('./trackingService');
-const { updateWhatsAppLeadStatus } = require('../unifiedDb');
+const {
+  updateWhatsAppLeadStatus,
+  recordWhatsAppOutboundChat,
+} = require('../unifiedDb');
 
 async function sendWhatsAppTemplate(user, industry, product) {
   if (!isWhatsAppEnabled()) {
@@ -41,13 +44,23 @@ async function sendWhatsAppTemplate(user, industry, product) {
   const rawName = user.name || user.full_name || (user.isCompanyContact ? user.company_name : '');
   const userName = rawName ? getFirstName(rawName) : "there";
 
+  const normalizeTemplateName = (name) => String(name || '').trim().toLowerCase();
   const dynamicButtonTemplates = String(process.env.WHATSAPP_DYNAMIC_URL_BUTTON_TEMPLATES || '')
     .split(',')
-    .map(name => name.trim())
+    .map(normalizeTemplateName)
     .filter(Boolean);
+  const quickReplyTemplates = String(process.env.WHATSAPP_QUICK_REPLY_TEMPLATES || 'workflow')
+    .split(',')
+    .map(normalizeTemplateName)
+    .filter(Boolean);
+  const isQuickReplyTemplate =
+    product === 'workflow_ai' ||
+    product === 'workflow' ||
+    quickReplyTemplates.includes(normalizeTemplateName(templateName));
   const useDynamicWhatsAppUrlButton =
     process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true" &&
-    dynamicButtonTemplates.includes(templateName);
+    dynamicButtonTemplates.includes(normalizeTemplateName(templateName)) &&
+    !isQuickReplyTemplate;
   const dynamicWhatsAppUrlButtonIndexes = String(
     process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEXES ||
     process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEX ||
@@ -56,7 +69,7 @@ async function sendWhatsAppTemplate(user, industry, product) {
     .split(",")
     .map(index => Number(index.trim()))
     .filter(index => Number.isInteger(index) && index >= 0);
-  const demoRef = encodeLeadRef(user.email || user.phone || 'lead');
+  const demoRef = encodeLeadRef(user.phone || user.phoneNumber || user.email || 'lead');
 
   // Clean phone number, ensure digits only
   let cleanPhone = String(phone).replace(/\D/g, '');
@@ -65,9 +78,6 @@ async function sendWhatsAppTemplate(user, industry, product) {
   if (cleanPhone.length === 10) {
     cleanPhone = '91' + cleanPhone;
   }
-
-  const BACKEND_URL = process.env.BACKEND_BASE_URL || 'http://localhost:5002';
-  const fullDemoLink = `${BACKEND_URL}/api/book-demo?ref=${demoRef}&kind=demo`;
 
   // Body component: {{1}} is replaced with the user's name
   const components = [
@@ -86,10 +96,18 @@ async function sendWhatsAppTemplate(user, industry, product) {
         sub_type: "url",
         index,
         parameters: [
-          { type: "text", text: "&id=" + demoRef }
+          { type: "text", text: demoRef }
         ]
       });
     });
+  } else if (
+    isQuickReplyTemplate &&
+    process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true" &&
+    dynamicButtonTemplates.includes(normalizeTemplateName(templateName))
+  ) {
+    console.warn(
+      `[WA Campaign] Skipping URL-button parameters for quick-reply template '${templateName}'.`
+    );
   }
 
   // WhatsApp API payload
@@ -130,15 +148,118 @@ async function sendWhatsAppTemplate(user, industry, product) {
   try {
     await updateWhatsAppLeadStatus(phone, "sent", "template_sent", {
       whatsappStatus: "sent",
-      user
+      user,
+      skipStatusHistory: true,
+      quiet: true,
     });
+    const messageId = response.data?.messages?.[0]?.id || null;
+    if (messageId) {
+      await recordWhatsAppOutboundChat(phone, `Template sent: ${templateName}`, messageId, {
+        type: 'template',
+        templateName,
+      });
+    }
   } catch (dbErr) {
-    console.error(`[WA DB Notice] Status update skipped for ${phone}:`, dbErr.message);
+    console.error('[WA DB Notice] Failed to record WhatsApp template message:', dbErr.message);
   }
 
   return response?.data;
 }
 
+async function sendWhatsAppText(phone, text) {
+  if (!isWhatsAppEnabled()) {
+    logWhatsAppDisabled();
+    return { skipped: true, reason: 'whatsapp_disabled' };
+  }
+
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.PHONE_NUMBER_ID;
+  if (!token || !phoneNumberId) {
+    throw new Error('WhatsApp reply skipped because WHATSAPP_TOKEN or PHONE_NUMBER_ID is missing.');
+  }
+
+  const recipient = String(phone || '').replace(/\D/g, '');
+  if (!recipient) {
+    throw new Error('WhatsApp reply skipped because the recipient number is invalid.');
+  }
+
+  const response = await axios.post(
+    `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`,
+    {
+      messaging_product: 'whatsapp',
+      to: recipient,
+      type: 'text',
+      text: {
+        body: text,
+        preview_url: true
+      }
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  console.log(`[WA Reply] Text sent to ${recipient} - Message ID: ${response.data?.messages?.[0]?.id}`);
+  return response.data;
+}
+
+async function sendWhatsAppCtaUrl(phone, { body, displayText, url }) {
+  if (!isWhatsAppEnabled()) {
+    logWhatsAppDisabled();
+    return { skipped: true, reason: 'whatsapp_disabled' };
+  }
+
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.PHONE_NUMBER_ID;
+  if (!token || !phoneNumberId) {
+    throw new Error('WhatsApp CTA message skipped because WHATSAPP_TOKEN or PHONE_NUMBER_ID is missing.');
+  }
+
+  const recipient = String(phone || '').replace(/\D/g, '');
+  if (!recipient) throw new Error('WhatsApp CTA message skipped because the recipient number is invalid.');
+  if (!/^https:\/\//i.test(String(url || ''))) {
+    throw new Error('WhatsApp CTA button must use an HTTPS URL.');
+  }
+  if (!body?.trim() || !displayText?.trim()) {
+    throw new Error('WhatsApp CTA message requires body text and a button label.');
+  }
+
+  const response = await axios.post(
+    `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`,
+    {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: recipient,
+      type: 'interactive',
+      interactive: {
+        type: 'cta_url',
+        body: { text: body },
+        action: {
+          name: 'cta_url',
+          parameters: {
+            display_text: displayText,
+            url,
+          },
+        },
+      },
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+  console.log(`[WA CTA] Sent '${displayText}' button to ${recipient} - Message ID: ${response.data?.messages?.[0]?.id}`);
+  return response.data;
+}
+
 module.exports = {
-  sendWhatsAppTemplate
+  sendWhatsAppTemplate,
+  sendWhatsAppText,
+  sendWhatsAppCtaUrl,
 };
