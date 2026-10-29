@@ -240,6 +240,31 @@
     white-space: nowrap;
 }
 
+.wa-table-compact {
+    table-layout: fixed;
+}
+
+.wa-table-compact th,
+.wa-table-compact td {
+    padding: 0.7rem 0.55rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.wa-table-compact th:first-child,
+.wa-table-compact td:first-child {
+    padding-right: 0.35rem;
+    padding-left: 0.35rem;
+}
+
+.wa-table-compact td .wa-btn-danger {
+    padding: 0.35rem 0.5rem;
+}
+
+.wa-table-compact .wa-table-actions {
+    white-space: nowrap;
+}
+
 .wa-text-primary {
     color: #111827;
     font-weight: 500;

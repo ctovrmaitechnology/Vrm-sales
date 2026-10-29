@@ -323,16 +323,28 @@ const WhatsApp = () => {
   const renderLeadsTable = (tableLeads, tableType) => (
     <div className="wa-table-container" style={{ minWidth: 0 }}>
       <div className="wa-table-scroll">
-        <table className="wa-table">
+        <table className="wa-table wa-table-compact">
+          <colgroup>
+            <col style={{ width: '4%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '9%' }} />
+            <col style={{ width: tableType === 'sent' ? '23%' : '27%' }} />
+            <col style={{ width: tableType === 'sent' ? '8%' : '9%' }} />
+            {tableType === 'sent' && <col style={{ width: '6%' }} />}
+            <col style={{ width: tableType === 'sent' ? '9%' : '10%' }} />
+          </colgroup>
           <thead>
             <tr>
-              <th className="wa-text-center" style={{ width: '40px' }}>
+              <th className="wa-text-center">
                 <input
                   type="checkbox"
-                  aria-label="Select all contacts"
-                  checked={tableLeads.filter(hasPhone).length > 0 && tableLeads.filter(hasPhone).every((lead) => selectedContacts.has(getPhone(lead)))}
+                  aria-label="Select all contacts on this page"
+                  checked={tablePagination.pageItems.filter(hasPhone).length > 0 && tablePagination.pageItems.filter(hasPhone).every((lead) => selectedContacts.has(getPhone(lead)))}
                   onChange={() => {
-                    const eligible = tableLeads.filter(hasPhone);
+                    const eligible = tablePagination.pageItems.filter(hasPhone);
                     const allSelected = eligible.length > 0 && eligible.every((lead) => selectedContacts.has(getPhone(lead)));
                     setSelectedContacts((prev) => {
                       const next = new Set(prev);
@@ -357,7 +369,7 @@ const WhatsApp = () => {
             </tr>
           </thead>
           <tbody>
-            {tableLeads.length > 0 ? tablePagination.pageItems.map((lead) => {
+            {tablePagination.pageItems.length > 0 ? tablePagination.pageItems.map((lead) => {
               const phone = getPhone(lead);
               const isSent = hasSentWhatsAppTemplate(lead);
               const isCompany = lead.isCompanyContact || lead.type === 'Company';
@@ -466,7 +478,7 @@ const WhatsApp = () => {
                       {lead.read ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb', verticalAlign: 'middle' }} title="Read"><CheckCheck size={20} strokeWidth={2.5} /></span> : <span style={{ color: '#9ca3af' }}>-</span>}
                     </td>
                   )}
-                  <td className="wa-text-right">
+                  <td className="wa-text-right wa-table-actions">
                     <button
                       type="button"
                       onClick={() => setFailureDetailLead(lead)}
@@ -477,7 +489,7 @@ const WhatsApp = () => {
                         alignItems: 'center',
                         justifyContent: 'center',
                         padding: '0.4rem',
-                        marginRight: '0.5rem',
+                        marginRight: '0.35rem',
                         border: '1px solid #d1d5db',
                         borderRadius: '6px',
                         background: 'transparent',
