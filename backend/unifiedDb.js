@@ -135,6 +135,82 @@ function statusSummaryForLead(lead, statuses = []) {
   };
 }
 
+function getWhatsAppTemplateStatuses(statusRows, leads = []) {
+  const statusesByPhone = new Map();
+  const phoneByLeadId = new Map(leads.map((lead) => [
+    lead.id,
+    String(lead.whatsapp_number || lead.phone_number || '').replace(/\D/g, '').slice(-10)
+  ]));
+
+  const addStatus = (phone, templateName, messageStatus, reason, messageId, timestamp) => {
+    const digits = String(phone || '').replace(/\D/g, '');
+    const phoneKey = digits.slice(-10);
+    if (!phoneKey || !templateName) return;
+
+    let templates = statusesByPhone.get(phoneKey);
+    if (!templates) {
+      templates = new Map();
+      statusesByPhone.set(phoneKey, templates);
+    }
+
+    const current = templates.get(templateName);
+    const updatedAt = timestamp ? new Date(timestamp).getTime() : 0;
+    const currentUpdatedAt = current?.updatedAt ? new Date(current.updatedAt).getTime() : 0;
+    if (current && currentUpdatedAt > updatedAt) return;
+
+    templates.set(templateName, {
+      templateName,
+      status: messageStatus || 'sent',
+      failureReason: reason || null,
+      messageId: messageId || null,
+      updatedAt: timestamp || null
+    });
+  };
+
+  for (const row of statusRows) {
+    const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    if (row.action === 'whatsapp_conversation') {
+      const chats = Array.isArray(metadata.Chat)
+        ? metadata.Chat
+        : (metadata.Chat && typeof metadata.Chat === 'object' ? [metadata.Chat] : []);
+      for (const chat of chats) {
+        if (chat?.direction !== 'outbound') continue;
+        const error = chat.error || {};
+        const templateName = chat.templateName
+          || chat.template?.name
+          || String(chat.text || '').match(/^Template sent:\s*(.+)$/i)?.[1]?.trim();
+        addStatus(
+          chat.to || chat.recipientId,
+          templateName,
+          chat.status || 'accepted',
+          error.details || error.message || error.title,
+          chat.messageId,
+          chat.statusTimestamp || chat.timestamp || row.updated_at || row.created_at
+        );
+      }
+    }
+
+    if (metadata.templateName && (row.status === 'failed' || row.status === 'sent')) {
+      const phone = metadata.company?.phone
+        || metadata.lead?.phone
+        || metadata.phone
+        || metadata.whatsappNumber
+        || (row.lead_id ? phoneByLeadId.get(row.lead_id) : null)
+        || row.email;
+      addStatus(
+        phone,
+        metadata.templateName,
+        row.status,
+        metadata.reason || metadata.details || metadata.error,
+        metadata.messageId,
+        row.updated_at || row.created_at
+      );
+    }
+  }
+
+  return statusesByPhone;
+}
+
 async function insertAutomationLog(action, message, lead = {}, level = 'info') {
   const EXCLUDED_LOG_ACTIONS = [
     'email_excel_uploaded',
@@ -347,6 +423,22 @@ async function getAllActiveLeads() {
        product: lead.project || '',
        isWhatsAppLead: true
      });
+  }
+
+  const templateStatusesByPhone = getWhatsAppTemplateStatuses(allOldStatuses, oldLeads);
+  for (const user of users) {
+    const digits = String(user.whatsappNumber || user.phoneNumber || user.phone || '').replace(/\D/g, '');
+    const templateStatuses = [...(templateStatusesByPhone.get(digits.slice(-10))?.values() || [])];
+    if (!templateStatuses.length) {
+      user.whatsappTemplateStatuses = [];
+      continue;
+    }
+
+    user.whatsappTemplateStatuses = templateStatuses;
+    const failures = templateStatuses
+      .filter((item) => item.status === 'failed')
+      .map((item) => `${item.templateName}: ${item.failureReason || 'Message undeliverable'}`);
+    if (failures.length) user.failureReason = failures.join('; ');
   }
 
   return users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -942,11 +1034,11 @@ async function updateWhatsAppLeadStatus(whatsappNumber, status, action, extra = 
 
     // 1. Resolve the matching lead and company contact.
     let manualLead = null;
-    if (extra.user?.id && !extra.user?.isCompanyContact && Number.isInteger(Number(extra.user.id))) {
+    if (extra.user?.id && !extra.user?.isCompanyContact && !extra.user?.isWhatsAppLead && !extra.user?.isEmailLead && Number.isInteger(Number(extra.user.id))) {
       manualLead = await prisma.leads.findUnique({ where: { id: Number(extra.user.id) } });
-    } else if (!extra.user?.isCompanyContact && extra.user?.email) {
+    } else if (!extra.user?.isCompanyContact && !extra.user?.isWhatsAppLead && !extra.user?.isEmailLead && extra.user?.email) {
       manualLead = await prisma.leads.findUnique({ where: { email: extra.user.email } });
-    } else if (!extra.user?.isCompanyContact && last10) {
+    } else if (!extra.user?.isCompanyContact && !extra.user?.isWhatsAppLead && !extra.user?.isEmailLead && last10) {
       manualLead = await prisma.leads.findFirst({
         where: {
           OR: [

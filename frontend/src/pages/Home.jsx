@@ -13,7 +13,9 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  ExternalLink
+  ExternalLink,
+  FileSpreadsheet,
+  FileText
 } from 'lucide-react';
 import Button from '../components/Button';
 import TablePagination from '../components/TablePagination';
@@ -80,6 +82,8 @@ const Home = () => {
   // Universal search state
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [workloadExportFormat, setWorkloadExportFormat] = useState('');
+  const [workloadExportError, setWorkloadExportError] = useState('');
   const statsQuery = useQuery({
     queryKey: ['overview-stats'],
     queryFn: async () => {
@@ -125,6 +129,31 @@ const Home = () => {
     totalEmailsSent: 0,
     totalUsers: 0,
     users: [],
+  };
+  const downloadWorkload = async (format) => {
+    setWorkloadExportFormat(format);
+    setWorkloadExportError('');
+    try {
+      const response = await fetch(apiUrl(`/api/overview-stats/workload-export?format=${format}`));
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || `Failed to download the ${format.toUpperCase()} report.`);
+      }
+
+      const file = await response.blob();
+      const url = URL.createObjectURL(file);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `team-workload.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setWorkloadExportError(error.message || `Failed to download the ${format.toUpperCase()} report.`);
+    } finally {
+      setWorkloadExportFormat('');
+    }
   };
   const loadingStats = statsQuery.isFetching;
   const searchResults = searchQuery.trim().length < 2 ? null : searchQueryResult.data || null;
@@ -555,14 +584,37 @@ const Home = () => {
               Click on any user or the button below to inspect their activity history in the User Module
             </p>
           </div>
-          <Button
-            variant="primary"
-            icon={<ArrowRight size={15} />}
-            onClick={() => navigate('/app/users')}
-          >
-            Open User Module
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <Button
+              variant="secondary"
+              icon={<FileSpreadsheet size={16} />}
+              onClick={() => downloadWorkload('xlsx')}
+              disabled={Boolean(workloadExportFormat)}
+            >
+              {workloadExportFormat === 'xlsx' ? 'Preparing Excel...' : 'Download Excel'}
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<FileText size={16} />}
+              onClick={() => downloadWorkload('pdf')}
+              disabled={Boolean(workloadExportFormat)}
+            >
+              {workloadExportFormat === 'pdf' ? 'Preparing PDF...' : 'Download PDF'}
+            </Button>
+            <Button
+              variant="primary"
+              icon={<ArrowRight size={15} />}
+              onClick={() => navigate('/app/users')}
+            >
+              Open User Module
+            </Button>
+          </div>
         </div>
+        {workloadExportError && (
+          <p role="alert" style={{ color: '#b91c1c', fontSize: '0.85rem', margin: '-0.5rem 0 1rem' }}>
+            {workloadExportError}
+          </p>
+        )}
 
         {stats.users.length > 0 ? (
           <div style={{
@@ -636,14 +688,29 @@ const Home = () => {
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #e2e8f0' }}>
-                    <div style={{ flex: 1, textAlign: 'center', background: '#ffffff', padding: '6px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gap: '8px',
+                    marginTop: '0.75rem',
+                    paddingTop: '0.75rem',
+                    borderTop: '1px solid #e2e8f0',
+                  }}>
+                    <div style={{ textAlign: 'center', background: '#ffffff', padding: '6px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
                       <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Leads</div>
                       <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e40af' }}>{leadsCount}</div>
                     </div>
-                    <div style={{ flex: 1, textAlign: 'center', background: '#ffffff', padding: '6px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+                    <div style={{ textAlign: 'center', background: '#ffffff', padding: '6px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
                       <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Companies</div>
                       <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#065f46' }}>{companiesCount}</div>
+                    </div>
+                    <div style={{ textAlign: 'center', background: '#ffffff', padding: '6px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Assigned Email Leads</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#7c3aed' }}>{u.emailLeadCount || 0}</div>
+                    </div>
+                    <div style={{ textAlign: 'center', background: '#ffffff', padding: '6px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Assigned WhatsApp Leads</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#059669' }}>{u.whatsappLeadCount || 0}</div>
                     </div>
                   </div>
                 </div>

@@ -1,6 +1,6 @@
 const axios = require('axios');
-const { getCampaign } = require('../productCampaigns');
-const { getFirstName, isWhatsAppEnabled, logWhatsAppDisabled } = require('../utils/helpers');
+const { getCampaign, resolveProduct } = require('../productCampaigns');
+const { isWhatsAppEnabled, logWhatsAppDisabled } = require('../utils/helpers');
 const { encodeLeadRef } = require('./trackingService');
 const {
   updateWhatsAppLeadStatus,
@@ -33,43 +33,90 @@ async function sendWhatsAppTemplate(user, industry, product) {
   // 3. Dynamic template selection logic based on user type
   const campaign = getCampaign(product);
   const templateName = campaign?.whatsappTemplate || (product === 'workflow' || product === 'workflow_ai' ? 'workflow' : null);
-  const templateLanguage = campaign?.whatsappLanguage || 'en';
 
   if (!templateName) {
     console.log(`WhatsApp skipped for ${user.email} - No approved template configured for ${product}.`);
     return { skipped: true, reason: "product_template_not_configured" };
   }
 
-  // Name resolution for {{1}} parameter
-  const rawName = user.name || user.full_name || (user.isCompanyContact ? user.company_name : '');
-  const userName = rawName ? getFirstName(rawName) : "there";
-
   const normalizeTemplateName = (name) => String(name || '').trim().toLowerCase();
   const dynamicButtonTemplates = String(process.env.WHATSAPP_DYNAMIC_URL_BUTTON_TEMPLATES || '')
     .split(',')
     .map(normalizeTemplateName)
     .filter(Boolean);
-  const quickReplyTemplates = String(process.env.WHATSAPP_QUICK_REPLY_TEMPLATES || 'workflow')
+  const quickReplyTemplates = String(process.env.WHATSAPP_QUICK_REPLY_TEMPLATES || '')
     .split(',')
     .map(normalizeTemplateName)
     .filter(Boolean);
-  const isQuickReplyTemplate =
-    product === 'workflow_ai' ||
-    product === 'workflow' ||
-    quickReplyTemplates.includes(normalizeTemplateName(templateName));
-  const useDynamicWhatsAppUrlButton =
-    process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true" &&
-    dynamicButtonTemplates.includes(normalizeTemplateName(templateName)) &&
-    !isQuickReplyTemplate;
-  const dynamicWhatsAppUrlButtonIndexes = String(
-    process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEXES ||
-    process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEX ||
-    "0"
-  )
+  const normalizedTemplateName = normalizeTemplateName(templateName);
+  const templateEnvSuffix = normalizedTemplateName
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .toUpperCase();
+  const templateLanguage = String(
+    process.env[`WHATSAPP_TEMPLATE_LANGUAGE_${templateEnvSuffix}`] ||
+    campaign?.whatsappLanguage ||
+    'en'
+  ).trim();
+  const imageHeaderTemplates = String(process.env.WHATSAPP_IMAGE_HEADER_TEMPLATES || '')
+    .split(',')
+    .map(normalizeTemplateName)
+    .filter(Boolean);
+  const usesImageHeader = imageHeaderTemplates.includes(normalizedTemplateName);
+  const mediaIdEnvKey = `WHATSAPP_TEMPLATE_HEADER_IMAGE_MEDIA_ID_${templateEnvSuffix}`;
+  const headerImageMediaId = String(
+    Object.prototype.hasOwnProperty.call(process.env, mediaIdEnvKey)
+      ? process.env[mediaIdEnvKey]
+      : process.env.WHATSAPP_TEMPLATE_HEADER_IMAGE_MEDIA_ID || ''
+  ).trim();
+  const headerImageUrl = String(process.env.WHATSAPP_TEMPLATE_HEADER_IMAGE_URL || '').trim();
+  let headerImage;
+
+  if (usesImageHeader) {
+    if (headerImageMediaId) {
+      headerImage = { id: headerImageMediaId };
+    } else if (Object.prototype.hasOwnProperty.call(process.env, mediaIdEnvKey)) {
+      throw new Error(
+        `WhatsApp image-header template '${templateName}' requires a media ID in ${mediaIdEnvKey}.`
+      );
+    } else {
+      let parsedImageUrl;
+      try {
+        parsedImageUrl = new URL(headerImageUrl);
+      } catch {
+        throw new Error(
+          `WhatsApp image-header template '${templateName}' requires ${mediaIdEnvKey}, WHATSAPP_TEMPLATE_HEADER_IMAGE_MEDIA_ID, or a valid HTTPS URL in WHATSAPP_TEMPLATE_HEADER_IMAGE_URL.`
+        );
+      }
+
+      if (parsedImageUrl.protocol !== 'https:') {
+        throw new Error(
+          `WhatsApp image-header template '${templateName}' requires ${mediaIdEnvKey}, WHATSAPP_TEMPLATE_HEADER_IMAGE_MEDIA_ID, or a valid HTTPS URL in WHATSAPP_TEMPLATE_HEADER_IMAGE_URL.`
+        );
+      }
+
+      headerImage = { link: headerImageUrl };
+    }
+  }
+
+  const templateButtonIndexesEnvKey = `WHATSAPP_DYNAMIC_URL_BUTTON_INDEXES_${templateEnvSuffix}`;
+  const configuredButtonIndexes = Object.prototype.hasOwnProperty.call(process.env, templateButtonIndexesEnvKey)
+    ? process.env[templateButtonIndexesEnvKey]
+    : process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEXES ||
+      process.env.WHATSAPP_DYNAMIC_URL_BUTTON_INDEX ||
+      "0";
+  const dynamicWhatsAppUrlButtonIndexes = String(configuredButtonIndexes)
     .split(",")
     .map(index => Number(index.trim()))
     .filter(index => Number.isInteger(index) && index >= 0);
+  const useDynamicWhatsAppUrlButton =
+    process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true" &&
+    dynamicButtonTemplates.includes(normalizedTemplateName) &&
+    !quickReplyTemplates.includes(normalizedTemplateName);
   const demoRef = encodeLeadRef(user.phone || user.phoneNumber || user.email || 'lead');
+  const videoButtonIndex = Number(process.env.WHATSAPP_DYNAMIC_URL_BUTTON_VIDEO_INDEX || 1);
+  const campaignProduct = resolveProduct(product);
+  const videoButtonRef = `${demoRef}&product=${encodeURIComponent(campaignProduct)}&template=${encodeURIComponent(normalizedTemplateName)}`;
 
   // Clean phone number, ensure digits only
   let cleanPhone = String(phone).replace(/\D/g, '');
@@ -79,31 +126,46 @@ async function sendWhatsAppTemplate(user, industry, product) {
     cleanPhone = '91' + cleanPhone;
   }
 
-  // Body component: {{1}} is replaced with the user's name
-  const components = [
-    {
-      type: "body",
+  // Keep the required template parameter visually blank.
+  const components = [];
+
+  if (usesImageHeader) {
+    components.push({
+      type: "header",
       parameters: [
-        { type: "text", text: userName }
+        {
+          type: "image",
+          image: headerImage
+        }
       ]
-    }
-  ];
+    });
+  }
+
+  components.push({
+    type: "body",
+    parameters: [
+      { type: "text", text: " " }
+    ]
+  });
 
   if (useDynamicWhatsAppUrlButton) {
     dynamicWhatsAppUrlButtonIndexes.forEach(index => {
       components.push({
         type: "button",
         sub_type: "url",
-        index,
+        index: String(index),
         parameters: [
-          { type: "text", text: demoRef }
+          {
+            type: "text",
+            text: index === videoButtonIndex ? videoButtonRef : demoRef
+          }
         ]
       });
     });
   } else if (
-    isQuickReplyTemplate &&
     process.env.WHATSAPP_DYNAMIC_URL_BUTTON === "true" &&
-    dynamicButtonTemplates.includes(normalizeTemplateName(templateName))
+    quickReplyTemplates.includes(normalizedTemplateName) &&
+    dynamicButtonTemplates.includes(normalizedTemplateName)
   ) {
     console.warn(
       `[WA Campaign] Skipping URL-button parameters for quick-reply template '${templateName}'.`
@@ -137,7 +199,7 @@ async function sendWhatsAppTemplate(user, industry, product) {
       }
     });
 
-    console.log(`WhatsApp template '${templateName}' sent to ${phone} (User: ${user.email}) - Message ID: ${response.data?.messages?.[0]?.id}`);
+    console.log(`WhatsApp template '${templateName}' accepted by WhatsApp for ${phone} (User: ${user.email}) - Message ID: ${response.data?.messages?.[0]?.id}`);
   } catch (error) {
     // 5. If WhatsApp sending fails: log the actual Meta API error and do not crash
     console.error(`WhatsApp API Error for ${user.email}:`, error.response?.data || error.message);

@@ -3,6 +3,7 @@ const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const { startWhatsAppCampaign, getWhatsAppCampaignStatus, recordWhatsAppWebhookResult } = require('../controllers/whatsappController');
 const { decodeLeadRef } = require('../services/trackingService');
+const { getCampaign, isValidProduct, resolveProduct } = require('../productCampaigns');
 const { sendWhatsAppText, sendWhatsAppCtaUrl } = require('../services/whatsappService');
 const {
   updateWhatsAppLeadStatus,
@@ -17,7 +18,7 @@ const WHATSAPP_BUTTON_DESTINATIONS = {
   video: {
     action: 'video_clicked',
     name: 'Demo Video',
-    url: 'https://drive.google.com/file/d/1ln87L5wQiuYwCLGPVbmZA0XxfoM6vM-j/view',
+    url: 'https://drive.google.com/file/d/1Sr_sY-4mXjC_IwS3cT-xYXTbGhgswrQ4/view?usp=drive_link',
     displayText: 'Watch Demo Video',
     body: 'Tap below to watch our demo video.',
   },
@@ -29,6 +30,31 @@ const WHATSAPP_BUTTON_DESTINATIONS = {
     body: 'Tap below to book a demo.',
   },
 };
+
+function getWhatsAppVideoDestination({ product, template }) {
+  const normalize = value => String(value || '').trim().toLowerCase();
+  const templateName = normalize(template);
+  const templateEnvKey = `WHATSAPP_TEMPLATE_VIDEO_URL_${templateName
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .toUpperCase()}`;
+  const templateUrl = String(process.env[templateEnvKey] || '').trim();
+
+  const campaignProduct = isValidProduct(product) ? resolveProduct(product) : null;
+  const campaign = campaignProduct ? getCampaign(campaignProduct) : null;
+  const videoMatch = campaign?.email?.match(/Watch Demo Video:\s*(https:\/\/\S+)/i);
+  const destination = templateUrl || videoMatch?.[1] || WHATSAPP_BUTTON_DESTINATIONS.video.url;
+  let parsedDestination;
+  try {
+    parsedDestination = new URL(destination);
+  } catch {
+    throw new Error(`WhatsApp video destination in ${templateEnvKey} must be a valid HTTPS URL.`);
+  }
+  if (parsedDestination.protocol !== 'https:') {
+    throw new Error(`WhatsApp video destination in ${templateEnvKey} must be a valid HTTPS URL.`);
+  }
+  return destination;
+}
 
 function getWhatsAppButtonReply(message) {
   const reply = message.interactive?.button_reply;
@@ -88,7 +114,22 @@ router.post('/conversation/:phone/messages', async (req, res) => {
 
 router.get('/button-click', async (req, res) => {
   const kind = String(req.query.kind || '').toLowerCase();
-  const button = WHATSAPP_BUTTON_DESTINATIONS[kind];
+  const baseButton = WHATSAPP_BUTTON_DESTINATIONS[kind];
+  let button = baseButton;
+  if (kind === 'video' && baseButton) {
+    try {
+      button = {
+        ...baseButton,
+        url: getWhatsAppVideoDestination({
+          product: req.query.product,
+          template: req.query.template,
+        }),
+      };
+    } catch (error) {
+      console.error('[WA Button] Invalid video destination:', error.message);
+      return res.status(500).send('WhatsApp video destination is not configured correctly.');
+    }
+  }
   if (!button) return res.sendStatus(400);
 
   const encodedRef = String(req.query.id || '');
@@ -168,6 +209,11 @@ router.post('/webhook', async (req, res) => {
               if (!recipientId) continue;
 
               await recordWhatsAppMessageStatus(recipientId, statusObj);
+              const statusError = statusObj.errors?.[0];
+              recordWhatsAppWebhookResult(recipientId, waStatus, {
+                reason: statusError?.error_data?.details || statusError?.message || statusError?.title,
+                code: statusError?.code
+              }, statusObj.id);
               if (waStatus === 'sent') {
                 await updateWhatsAppLeadStatus(recipientId, 'sent', 'sent', {
                   whatsappStatus: 'sent',
@@ -190,7 +236,7 @@ router.post('/webhook', async (req, res) => {
                 });
               } else if (waStatus === 'failed') {
                 const errorObj = statusObj.errors?.[0];
-                const failReason = errorObj?.title || errorObj?.message || errorObj?.error_data?.details || 'Message undeliverable';
+                const failReason = errorObj?.error_data?.details || errorObj?.message || errorObj?.title || 'Message undeliverable';
                 const errorCode = errorObj?.code;
 
                 await updateWhatsAppLeadStatus(recipientId, 'failed', 'failed', {
@@ -205,8 +251,6 @@ router.post('/webhook', async (req, res) => {
                     details: errorObj?.error_data?.details || null
                   }
                 });
-
-                recordWhatsAppWebhookResult(recipientId, 'failed', { reason: failReason, code: errorCode });
               }
             }
           }

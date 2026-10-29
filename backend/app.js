@@ -4,7 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const routes = require('./routes/index');
 const linkedinRoutes = require('./routes/linkedinRoutes');

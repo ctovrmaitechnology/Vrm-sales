@@ -2,10 +2,11 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = require('../prismaClient');
 const { sendWhatsAppTemplate } = require('../services/whatsappService');
 const { getCampaign, isValidProduct, resolveProduct } = require('../productCampaigns');
-const { getAllActiveLeads } = require('../unifiedDb');
+const { getAllActiveLeads, updateWhatsAppLeadStatus } = require('../unifiedDb');
 const { delay } = require('../utils/helpers');
 
 let whatsappCampaignRunning = false;
+let campaignMessageStatuses = new Map();
 
 let whatsappCampaignProgress = {
   running: false,
@@ -15,6 +16,7 @@ let whatsappCampaignProgress = {
   queued: 0,
   progress: 0,
   currentContact: '',
+  statusVersion: 0,
   startedAt: null,
   completedAt: null
 };
@@ -31,19 +33,31 @@ async function startWhatsAppCampaign(req, res) {
     return res.status(409).json({ error: 'A WhatsApp campaign is already running.' });
   }
 
-  const { templateProduct, selectedPhones, selectedCompanyIds } = req.body || {};
+  const { templateProduct, templateProducts, selectedPhones, selectedCompanyIds } = req.body || {};
 
   // ── Validate template ──────────────────────────────────────────────────────
-  if (!templateProduct || !isValidProduct(templateProduct)) {
+  const requestedProducts = Array.isArray(templateProducts)
+    ? templateProducts
+    : templateProduct
+      ? [templateProduct]
+      : [];
+  const products = [...new Set(requestedProducts.map(resolveProduct))];
+
+  if (
+    requestedProducts.length === 0 ||
+    requestedProducts.some(product => !isValidProduct(product))
+  ) {
     return res.status(400).json({ error: 'Please select a valid WhatsApp template.' });
   }
 
-  const product = resolveProduct(templateProduct);
-  const campaign = getCampaign(product);
-
-  if (!campaign?.whatsappTemplate) {
-    return res.status(400).json({ error: 'No approved WhatsApp template configured for this product.' });
+  const campaigns = products.map(product => ({ product, campaign: getCampaign(product) }));
+  const unconfiguredCampaign = campaigns.find(({ campaign }) => !campaign?.whatsappTemplate);
+  if (unconfiguredCampaign) {
+    return res.status(400).json({
+      error: `No approved WhatsApp template configured for ${unconfiguredCampaign.product}.`
+    });
   }
+  const product = products[0];
 
   // ── Validate selection ─────────────────────────────────────────────────────
   const hasPhones = Array.isArray(selectedPhones) && selectedPhones.length > 0;
@@ -55,6 +69,7 @@ async function startWhatsAppCampaign(req, res) {
 
   // Reserve the campaign slot before database reads so concurrent requests cannot overlap.
   whatsappCampaignRunning = true;
+  campaignMessageStatuses = new Map();
 
   try {
     // ── Build recipients ───────────────────────────────────────────────────────
@@ -99,7 +114,9 @@ async function startWhatsAppCampaign(req, res) {
           phone: lead.whatsappNumber || lead.phoneNumber || lead.phone,
           phoneNumber: lead.whatsappNumber || lead.phoneNumber || lead.phone,
           product_type: product,
-          isCompanyContact: false
+          isCompanyContact: false,
+          isWhatsAppLead: Boolean(lead.isWhatsAppLead),
+          isEmailLead: Boolean(lead.isEmailLead)
         }));
       users.push(...leadUsers);
 
@@ -155,12 +172,13 @@ async function startWhatsAppCampaign(req, res) {
 
     whatsappCampaignProgress = {
       running: true,
-      total: users.length,
+      total: users.length * campaigns.length,
       sent: 0,
       failed: 0,
-      queued: users.length,
+      queued: users.length * campaigns.length,
       progress: 0,
       currentContact: users[0]?.name ? `${users[0].name} (${users[0].phone})` : String(users[0]?.phone || ''),
+      statusVersion: 0,
       startedAt: new Date(),
       completedAt: null
     };
@@ -168,31 +186,61 @@ async function startWhatsAppCampaign(req, res) {
     // Respond immediately, send in background
     res.json({
       success: true,
-      message: `WhatsApp campaign started in background. Sending to ${users.length} contact(s).`
+      message: `WhatsApp campaign started in background. Sending ${campaigns.length} template(s) to ${users.length} contact(s).`
     });
 
     (async () => {
       let success = 0;
       let failed = 0;
+      const totalMessages = users.length * campaigns.length;
       try {
         for (const user of users) {
-          whatsappCampaignProgress.currentContact = user.name ? `${user.name} (${user.phone})` : String(user.phone || '');
-          try {
-            await sendWhatsAppTemplate(user, null, product);
-            success++;
-            whatsappCampaignProgress.sent = success;
-            console.log(`[WA Campaign] Sent to ${user.phone} (${user.name})`);
-          } catch (err) {
-            failed++;
-            whatsappCampaignProgress.failed = failed;
-            console.error(`[WA Campaign] Failed for ${user.phone}:`, err.message);
+          for (const { product: campaignProduct } of campaigns) {
+            const campaign = getCampaign(campaignProduct);
+            whatsappCampaignProgress.currentContact = `${user.name ? `${user.name} ` : ''}(${user.phone}) · ${campaign.whatsappTemplate}`;
+            try {
+              const result = await sendWhatsAppTemplate(user, null, campaignProduct);
+              const messageId = result?.messages?.[0]?.id;
+              if (messageId && campaignMessageStatuses.get(messageId) === 'failed') {
+                failed++;
+                whatsappCampaignProgress.failed++;
+              } else {
+                success++;
+                whatsappCampaignProgress.sent++;
+                if (messageId) campaignMessageStatuses.set(messageId, 'sent');
+              }
+              console.log(`[WA Campaign] Accepted '${campaign.whatsappTemplate}' for ${user.phone} (${user.name})`);
+            } catch (err) {
+              failed++;
+              whatsappCampaignProgress.failed++;
+              const apiError = err.response?.data?.error;
+              const reason = apiError?.error_data?.details || apiError?.message || err.message || 'WhatsApp rejected the message.';
+              try {
+                await updateWhatsAppLeadStatus(user.phone, 'failed', 'failed', {
+                  whatsappStatus: 'failed',
+                  user,
+                  reason,
+                  errorCode: apiError?.code,
+                  metadata: {
+                    templateName: campaign.whatsappTemplate,
+                    whatsappNumber: user.phone,
+                    reason,
+                    code: apiError?.code || null,
+                    details: apiError?.error_data?.details || null,
+                  },
+                });
+              } catch (statusError) {
+                console.error(`[WA Campaign] Could not save failure for ${user.phone} using '${campaign.whatsappTemplate}':`, statusError.message);
+              }
+              console.error(`[WA Campaign] Failed for ${user.phone} using '${campaign.whatsappTemplate}':`, err.message);
+            }
+            whatsappCampaignProgress.queued = Math.max(0, totalMessages - (success + failed));
+            whatsappCampaignProgress.progress = Math.min(100, Math.round(((success + failed) / totalMessages) * 100));
+            // 2-second pause between sends to respect WhatsApp rate limits
+            await delay(2000);
           }
-          whatsappCampaignProgress.queued = Math.max(0, users.length - (success + failed));
-          whatsappCampaignProgress.progress = Math.min(100, Math.round(((success + failed) / users.length) * 100));
-          // 2-second pause between sends to respect WhatsApp rate limits
-          await delay(2000);
         }
-        console.log(`[WA Campaign] Finished. Sent: ${success}, Failed: ${failed}`);
+        console.log(`[WA Campaign] Finished. Accepted: ${success}, API rejected: ${failed}`);
       } catch (err) {
         console.error('[WA Campaign] Background error:', err.message);
       } finally {
@@ -214,11 +262,21 @@ async function startWhatsAppCampaign(req, res) {
   }
 }
 
-function recordWhatsAppWebhookResult(recipientId, status, errorInfo) {
-  if (status === 'failed') {
-    if (whatsappCampaignProgress.running || (whatsappCampaignProgress.completedAt && (new Date() - new Date(whatsappCampaignProgress.completedAt) < 180000))) {
+function recordWhatsAppWebhookResult(recipientId, status, errorInfo, messageId) {
+  const nextStatus = String(status || '').toLowerCase();
+  const previousStatus = messageId ? campaignMessageStatuses.get(messageId) : null;
+  if (!previousStatus || previousStatus === nextStatus) return;
+
+  const priority = { sent: 1, delivered: 2, read: 3, failed: 4 };
+  if ((priority[previousStatus] || 0) > (priority[nextStatus] || 0)) return;
+  campaignMessageStatuses.set(messageId, nextStatus);
+  whatsappCampaignProgress.statusVersion++;
+
+  if (nextStatus === 'failed') {
+    if (previousStatus !== 'failed') {
       whatsappCampaignProgress.failed++;
       whatsappCampaignProgress.sent = Math.max(0, whatsappCampaignProgress.sent - 1);
+      whatsappCampaignProgress.sent = Math.min(whatsappCampaignProgress.sent, whatsappCampaignProgress.total);
       if (errorInfo?.reason) {
         whatsappCampaignProgress.lastError = errorInfo.reason;
       }

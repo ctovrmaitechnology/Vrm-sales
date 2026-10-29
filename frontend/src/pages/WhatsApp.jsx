@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Send, Loader2, X, RefreshCw, CheckCheck } from 'lucide-react';
+import { Send, Loader2, X, RefreshCw, CheckCheck, Eye } from 'lucide-react';
 import CampaignProgressWidget from '../components/CampaignProgressWidget';
 import TablePagination from '../components/TablePagination';
 import TableFilters from '../components/TableFilters';
@@ -11,19 +11,48 @@ const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
 
 const WHATSAPP_TEMPLATES = [
-  { value: 'workflow',          label: 'Workflow - AI Recruitment (Approved: workflow)' },
-  { value: 'workflow_ai',       label: 'WorkflowAI - Recruitment Automation' },
-  { value: 'bench_to_billing',  label: 'B2B - Bench to Billing' },
-  { value: 'voice_agent',       label: 'TalkSphere AI - Voice Agent' },
-  { value: 'face_recognition',  label: 'VisionixAI - Face Recognition' },
-  { value: 'english_tutor_ai',  label: 'BuddyAI - AI English Tutor' },
-  { value: 'exit_interview_ai', label: 'ExitConnect - Exit Interview' },
-  { value: 'election_survey',   label: 'PeopleConnect - Election Survey' },
-  { value: 'outreach_ai',       label: 'LyntroAI - Outreach Bot' },
-  { value: 'ai_sales_agent',    label: 'AI Sales Agent' },
+  { value: 'workflow_ai', label: 'Workflow Final (workflow_final)', templateName: 'workflow_final' },
+  { value: 'bench_to_billing', label: 'Bench to Billing Final (benchtodeploy_final)', templateName: 'benchtodeploy_final' },
 ];
 
 const EMPTY_LIST = [];
+const isAcceptedWhatsAppStatus = (status) => ['accepted', 'sent', 'delivered', 'read'].includes(status);
+const getCurrentTemplateStatuses = (lead) =>
+  (lead.whatsappTemplateStatuses || []).filter((item) =>
+    WHATSAPP_TEMPLATES.some((template) => template.templateName === item.templateName)
+  );
+const formatFailureReason = (reason) => {
+  const text = String(reason || '').trim();
+  if (!text || /^message undeliverable\.?$/i.test(text)) return 'Message Undeliverable.';
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+};
+const getLeadFailureReason = (lead) => {
+  const reasons = getCurrentTemplateStatuses(lead)
+    .filter((item) => item.status === 'failed')
+    .map((item) => formatFailureReason(item.failureReason));
+  return reasons.length ? [...new Set(reasons)].join('; ') : lead.failureReason || '';
+};
+const hasSentWhatsAppTemplate = (lead) => {
+  const statuses = getCurrentTemplateStatuses(lead);
+  return statuses.length
+    ? statuses.some((item) => isAcceptedWhatsAppStatus(item.status))
+    : lead.whatsappStatus === 'sent' || lead.status === 'sent';
+};
+const hasFailedWhatsAppTemplate = (lead) => {
+  const statuses = getCurrentTemplateStatuses(lead);
+  return statuses.length
+    ? statuses.some((item) => item.status === 'failed')
+    : lead.whatsappStatus === 'failed' || lead.status === 'failed';
+};
+const hasUnsentWhatsAppTemplate = (lead) => {
+  const statuses = getCurrentTemplateStatuses(lead);
+  return statuses.length
+    ? WHATSAPP_TEMPLATES.some((template) => {
+      const status = statuses.find((item) => item.templateName === template.templateName)?.status;
+      return !status || status === 'failed';
+    })
+    : !hasSentWhatsAppTemplate(lead);
+};
 
 const WhatsApp = () => {
   const queryClient = useQueryClient();
@@ -36,6 +65,8 @@ const WhatsApp = () => {
       if (!Array.isArray(data)) throw new Error('The WhatsApp leads API returned an invalid response.');
       return data;
     },
+    staleTime: 5000,
+    refetchOnWindowFocus: true,
   });
   const leads = leadsQuery.data || EMPTY_LIST;
   const [searchTerm, setSearchTerm] = useState("");
@@ -50,6 +81,7 @@ const WhatsApp = () => {
       },
       { key: 'addedBy', label: 'Added by', field: 'createdByName' },
       { key: 'source', label: 'Source', field: 'source' },
+      { key: 'reason', label: 'Reason', field: getLeadFailureReason },
       {
         key: 'replied',
         label: 'Replied',
@@ -63,13 +95,14 @@ const WhatsApp = () => {
         key: 'status',
         label: 'Status',
         field: (lead) => {
-          if (lead.whatsappStatus === 'sent' || lead.status === 'sent') return 'sent';
-          if (lead.whatsappStatus === 'failed' || lead.status === 'failed') return 'failed';
+          if (hasSentWhatsAppTemplate(lead) && hasFailedWhatsAppTemplate(lead)) return 'partially failed';
+          if (hasSentWhatsAppTemplate(lead)) return 'sent';
+          if (hasFailedWhatsAppTemplate(lead)) return 'failed';
           return 'not sent';
         },
         options: activeTab === 'sent'
-          ? [{ value: 'sent', label: 'Sent' }]
-          : [{ value: 'failed', label: 'Failed' }, { value: 'not sent', label: 'Not sent' }],
+          ? [{ value: 'sent', label: 'Sent' }, { value: 'partially failed', label: 'Partially failed' }]
+          : [{ value: 'failed', label: 'Failed' }, { value: 'partially failed', label: 'Partially failed' }, { value: 'not sent', label: 'Not sent' }],
       },
       ...(activeTab === 'sent'
         ? [{
@@ -85,19 +118,29 @@ const WhatsApp = () => {
 
   // Campaign Modal & State
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState('workflow');
+  const [selectedTemplates, setSelectedTemplates] = useState(['workflow']);
+  const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
   const [selectedContacts, setSelectedContacts] = useState(new Set());
   const [campaignRunning, setCampaignRunning] = useState(false);
   const [campaignMessage, setCampaignMessage] = useState('');
   const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [chatLead, setChatLead] = useState(null);
+  const [failureDetailLead, setFailureDetailLead] = useState(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState('');
   const chatMessagesRef = useRef(null);
+  const deliveryRefreshTimerRef = useRef(null);
+  const validSelectedTemplates = WHATSAPP_TEMPLATES
+    .map((template) => template.value)
+    .filter((value) => selectedTemplates.includes(value));
 
   const getPhone = (lead) => String(lead?.whatsappNumber || lead?.phoneNumber || lead?.phone || '').trim();
   const hasPhone = (lead) => Boolean(getPhone(lead));
+  const failureDetailPhone = getPhone(failureDetailLead);
+  const failureDetailContact = failureDetailLead
+    ? leads.find((lead) => failureDetailPhone && getPhone(lead) === failureDetailPhone) || failureDetailLead
+    : null;
   const chatPhone = getPhone(chatLead);
   const conversationQuery = useQuery({
     queryKey: ['whatsapp-conversation', chatPhone],
@@ -146,7 +189,7 @@ const WhatsApp = () => {
   };
 
   const dashboardData = useMemo(() => {
-    const sentList = leads.filter((lead) => lead.status === 'sent' || lead.whatsappStatus === 'sent');
+    const sentList = leads.filter(hasSentWhatsAppTemplate);
     const readList = sentList.filter((lead) => Boolean(lead.read));
     return {
       totalLeads: leads.length,
@@ -157,6 +200,16 @@ const WhatsApp = () => {
   }, [leads]);
   const refreshing = leadsQuery.isFetching;
   const fetchDashboardData = () => leadsQuery.refetch();
+  const refreshAfterDeliveryUpdate = () => {
+    if (deliveryRefreshTimerRef.current) clearTimeout(deliveryRefreshTimerRef.current);
+    deliveryRefreshTimerRef.current = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-leads'] });
+    }, 350);
+  };
+
+  useEffect(() => () => {
+    if (deliveryRefreshTimerRef.current) clearTimeout(deliveryRefreshTimerRef.current);
+  }, []);
 
   const deleteLead = async (lead) => {
     const identifier = lead.email || lead.phoneNumber || lead.phone || lead.whatsappNumber;
@@ -188,6 +241,41 @@ const WhatsApp = () => {
     }
   };
 
+  const deleteSelectedLeads = async () => {
+    const identifiers = [...selectedContacts];
+    if (!identifiers.length) return;
+    if (!window.confirm(`Are you sure you want to delete ${identifiers.length} selected contact${identifiers.length === 1 ? '' : 's'}?`)) return;
+
+    const results = await Promise.allSettled(identifiers.map(async (identifier) => {
+      const response = await fetch(apiUrl('/api/delete'), {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || `Failed to delete ${identifier}.`);
+      return identifier;
+    }));
+
+    const deletedIdentifiers = results
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => result.value);
+    const failedCount = results.length - deletedIdentifiers.length;
+
+    setSelectedContacts((current) => {
+      const next = new Set(current);
+      deletedIdentifiers.forEach((identifier) => next.delete(identifier));
+      return next;
+    });
+    if (deletedIdentifiers.length) {
+      await queryClient.invalidateQueries({ queryKey: ['whatsapp-leads'] });
+    }
+
+    if (failedCount) {
+      alert(`Deleted ${deletedIdentifiers.length} contact${deletedIdentifiers.length === 1 ? '' : 's'}. ${failedCount} could not be deleted. Please refresh and try again.`);
+    }
+  };
+
   const filteredLeads = whatsappFilters.filteredItems.filter((lead) => {
     const search = searchTerm.trim().toLowerCase();
 
@@ -214,11 +302,11 @@ const WhatsApp = () => {
       );
   });
 
-  const isSentLead = (lead) => lead.whatsappStatus === 'sent' || lead.status === 'sent';
+  const isSentLead = hasSentWhatsAppTemplate;
 
-  // One table, filtered by the selected tab.
+  // Mixed outcomes appear in both tabs so neither the successful nor failed template is hidden.
   const tabLeads = filteredLeads.filter((lead) =>
-    activeTab === 'sent' ? isSentLead(lead) : !isSentLead(lead)
+    activeTab === 'sent' ? isSentLead(lead) : hasUnsentWhatsAppTemplate(lead)
   );
   const tablePagination = useTablePagination(tabLeads);
 
@@ -262,6 +350,7 @@ const WhatsApp = () => {
               <th>Assigned User</th>
               <th>Phone Number</th>
               <th className="wa-text-center">Sent Status</th>
+              <th>Template delivery status</th>
               <th className="wa-text-center">Conversation</th>
               {tableType === 'sent' && <th className="wa-text-center">Read</th>}
               <th className="wa-text-right">Actions</th>
@@ -270,9 +359,10 @@ const WhatsApp = () => {
           <tbody>
             {tableLeads.length > 0 ? tablePagination.pageItems.map((lead) => {
               const phone = getPhone(lead);
-              const isSent = lead.whatsappStatus === 'sent' || lead.status === 'sent';
+              const isSent = hasSentWhatsAppTemplate(lead);
               const isCompany = lead.isCompanyContact || lead.type === 'Company';
               const isChecked = Boolean(phone && selectedContacts.has(phone));
+              const templateStatuses = getCurrentTemplateStatuses(lead);
 
               return (
                 <tr key={lead.id || phone || lead.email || lead.name} className={lead.read ? 'wa-table-row-success' : 'wa-table-row-default'}>
@@ -297,7 +387,58 @@ const WhatsApp = () => {
                   <td className="wa-text-secondary">{lead.createdByName || '-'}</td>
                   <td className="wa-text-secondary">{phone || '-'}</td>
                   <td className="wa-text-center">
-                    {isSent ? <span className="wa-badge wa-badge-blue">Sent</span> : <span className="wa-badge wa-badge-gray">Not Sent</span>}
+                    {isSent && hasFailedWhatsAppTemplate(lead)
+                      ? <span className="wa-badge wa-badge-red">Partially failed</span>
+                      : hasFailedWhatsAppTemplate(lead)
+                        ? <span className="wa-badge wa-badge-red">Failed</span>
+                      : isSent
+                        ? <span className="wa-badge wa-badge-blue">Sent</span>
+                        : <span className="wa-badge wa-badge-gray">Not Sent</span>}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.55rem' }}>
+                      {templateStatuses.length === 0 && isSent ? (
+                        <span style={{ fontSize: '0.8rem', color: '#4b5563', whiteSpace: 'normal' }}>
+                          Sent — template-specific status unavailable
+                        </span>
+                      ) : templateStatuses.length === 0 && hasFailedWhatsAppTemplate(lead) ? (
+                        <span style={{ fontSize: '0.8rem', color: '#991b1b', whiteSpace: 'normal' }}>
+                          Failed: {formatFailureReason(lead.failureReason)}
+                        </span>
+                      ) : WHATSAPP_TEMPLATES.map((template) => {
+                        const message = templateStatuses.find((item) => item.templateName === template.templateName);
+                        const status = message?.status || 'not_sent';
+                        const isFailed = status === 'failed';
+                        const isAccepted = isAcceptedWhatsAppStatus(status);
+                        const statusLabel = isFailed
+                          ? 'Failed'
+                          : status === 'accepted'
+                            ? 'Accepted'
+                            : status === 'delivered'
+                              ? 'Delivered'
+                              : status === 'read'
+                                ? 'Read'
+                                : isAccepted
+                                  ? 'Sent'
+                                  : 'Not sent';
+                        return (
+                          <div key={template.templateName} style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                            <span style={{
+                              fontSize: '0.8rem',
+                              fontWeight: 600,
+                              color: isFailed ? '#991b1b' : isAccepted ? '#166534' : '#4b5563',
+                            }}>
+                              {template.templateName}: {statusLabel}
+                            </span>
+                            {isFailed && (
+                              <span style={{ fontSize: '0.78rem', color: '#991b1b', whiteSpace: 'normal' }}>
+                                {formatFailureReason(message.failureReason)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </td>
                   <td className="wa-text-center">
                     <button
@@ -326,12 +467,33 @@ const WhatsApp = () => {
                     </td>
                   )}
                   <td className="wa-text-right">
+                    <button
+                      type="button"
+                      onClick={() => setFailureDetailLead(lead)}
+                      aria-label={`View delivery details for ${lead.name || phone || 'contact'}`}
+                      title="View template delivery details"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0.4rem',
+                        marginRight: '0.5rem',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        background: 'transparent',
+                        color: '#4b5563',
+                        cursor: 'pointer',
+                        verticalAlign: 'middle',
+                      }}
+                    >
+                      <Eye size={16} />
+                    </button>
                     <button onClick={() => deleteLead(lead)} className="wa-btn-danger">Delete</button>
                   </td>
                 </tr>
               );
             }) : (
-              <tr><td colSpan={tableType === 'sent' ? 9 : 8} className="wa-text-center wa-text-secondary" style={{ padding: '3rem 1.5rem' }}>
+              <tr><td colSpan={tableType === 'sent' ? 10 : 9} className="wa-text-center wa-text-secondary" style={{ padding: '3rem 1.5rem' }}>
                 {emptyMessages[tableType]}
               </td></tr>
             )}
@@ -386,6 +548,10 @@ const WhatsApp = () => {
   };
 
   const sendCampaign = async () => {
+    if (validSelectedTemplates.length === 0) {
+      setCampaignMessage('Please select at least one template.');
+      return;
+    }
     if (selectedContacts.size === 0) {
       setCampaignMessage('Please select at least one contact.');
       return;
@@ -405,7 +571,7 @@ const WhatsApp = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          templateProduct: selectedTemplate,
+          templateProducts: validSelectedTemplates,
           selectedPhones: phones,
           selectedCompanyIds: companyIds.length > 0 ? companyIds : undefined
         })
@@ -413,6 +579,7 @@ const WhatsApp = () => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to start campaign.');
       setCampaignMessage(data.message || 'WhatsApp campaign started successfully!');
+      setSelectedContacts(new Set());
       window.dispatchEvent(new CustomEvent('campaign-started', { detail: { type: 'whatsapp' } }));
       setTimeout(() => {
         setCampaignModalOpen(false);
@@ -527,9 +694,18 @@ const WhatsApp = () => {
       }}>
         <div>
           {selectedContacts.size > 0 ? (
-            <span style={{ fontSize: '0.875rem', color: 'var(--primary, #3b5bff)', fontWeight: 600 }}>
-              ✓ {selectedContacts.size} contact{selectedContacts.size === 1 ? '' : 's'} selected
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <span style={{ fontSize: '0.875rem', color: 'var(--primary, #3b5bff)', fontWeight: 600 }}>
+                ✓ {selectedContacts.size} contact{selectedContacts.size === 1 ? '' : 's'} selected
+              </span>
+              <button
+                type="button"
+                onClick={deleteSelectedLeads}
+                className="wa-btn-danger"
+              >
+                Delete selected
+              </button>
+            </div>
           ) : (
             <span style={{ fontSize: '0.875rem', color: 'var(--text-muted, #64748b)' }}>
               Select contacts from table or click &ldquo;Send Campaign&rdquo; to launch
@@ -599,6 +775,99 @@ const WhatsApp = () => {
         </div>
       </div>
 
+      {failureDetailContact && (
+        <div
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setFailureDetailLead(null);
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 60,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            background: 'rgba(15, 23, 42, 0.5)',
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="whatsapp-failure-title"
+            style={{
+              width: '100%',
+              maxWidth: '440px',
+              padding: '1.5rem',
+              borderRadius: '12px',
+              background: 'var(--bg-card, #ffffff)',
+              border: '1px solid var(--border-color, #e5e7eb)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+              <div>
+                <h2 id="whatsapp-failure-title" style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>
+                  WhatsApp delivery details
+                </h2>
+                <p style={{ margin: '0.4rem 0 0', color: '#6b7280', fontSize: '0.875rem' }}>
+                  {failureDetailContact.name || 'Contact'}{getPhone(failureDetailContact) ? ` · ${getPhone(failureDetailContact)}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFailureDetailLead(null)}
+                aria-label="Close delivery details"
+                style={{ border: 0, background: 'transparent', color: '#6b7280', cursor: 'pointer', padding: '0.2rem' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div style={{ marginTop: '1.25rem', padding: '1rem', borderRadius: '8px', background: '#f9fafb' }}>
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#6b7280' }}>
+                Template delivery status
+              </p>
+              {getCurrentTemplateStatuses(failureDetailContact).length > 0
+                ? WHATSAPP_TEMPLATES.map((template) => {
+                const message = getCurrentTemplateStatuses(failureDetailContact)
+                  .find((item) => item.templateName === template.templateName);
+                const status = message?.status || 'not_sent';
+                const label = status === 'failed'
+                  ? 'Failed'
+                  : status === 'accepted'
+                    ? 'Accepted by WhatsApp'
+                  : status === 'delivered'
+                    ? 'Delivered'
+                    : status === 'read'
+                      ? 'Read'
+                      : isAcceptedWhatsAppStatus(status)
+                        ? 'Sent'
+                        : 'Not sent';
+                return (
+                  <div key={template.templateName} style={{ padding: '0.65rem 0', borderTop: '1px solid #e5e7eb' }}>
+                    <p style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: '0.875rem' }}>
+                      {template.templateName}: {label}
+                    </p>
+                    {status === 'failed' && (
+                      <p role="status" style={{ margin: '0.3rem 0 0', color: '#991b1b', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+                        {formatFailureReason(message.failureReason)}
+                      </p>
+                    )}
+                  </div>
+                );
+              })
+                : (
+                <p role="status" style={{ margin: 0, color: '#111827', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+                  {failureDetailContact.failureReason
+                    || 'No template-specific delivery details are available for this contact yet.'}
+                </p>
+                )}
+            </div>
+          </section>
+        </div>
+      )}
+
       {/* CAMPAIGN MODAL */}
       {campaignModalOpen && (
         <div style={{
@@ -657,7 +926,7 @@ const WhatsApp = () => {
 
             {/* Modal Body */}
             <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1 }}>
-              {/* 1. Select Template */}
+              {/* 1. Select Templates */}
               <div style={{ marginBottom: '1.5rem' }}>
                 <label style={{
                   display: 'block',
@@ -666,20 +935,89 @@ const WhatsApp = () => {
                   marginBottom: '0.5rem',
                   color: 'var(--text-dark, #1f2937)'
                 }}>
-                  1. Select Template
+                  1. Select Templates
                 </label>
-                <select
-                  className="form-control"
-                  value={selectedTemplate}
-                  onChange={(e) => setSelectedTemplate(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px' }}
-                >
-                  {WHATSAPP_TEMPLATES.map((tmpl) => (
-                    <option key={tmpl.value} value={tmpl.value}>
-                      {tmpl.label}
-                    </option>
-                  ))}
-                </select>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    className="form-control"
+                    aria-haspopup="listbox"
+                    aria-expanded={templateDropdownOpen}
+                    onClick={() => setTemplateDropdownOpen((open) => !open)}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      textAlign: 'left',
+                      background: '#fff',
+                    }}
+                  >
+                    <span>
+                      {validSelectedTemplates.length
+                        ? `${validSelectedTemplates.length} template${validSelectedTemplates.length === 1 ? '' : 's'} selected`
+                        : 'Select templates'}
+                    </span>
+                    <span aria-hidden="true">{templateDropdownOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {templateDropdownOpen && (
+                    <div
+                      role="listbox"
+                      aria-label="WhatsApp templates"
+                      aria-multiselectable="true"
+                      style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 4px)',
+                        left: 0,
+                        right: 0,
+                        zIndex: 5,
+                        maxHeight: '240px',
+                        overflowY: 'auto',
+                        padding: '0.35rem',
+                        border: '1px solid var(--border-color, #cbd5e1)',
+                        borderRadius: '6px',
+                        background: '#fff',
+                        boxShadow: '0 8px 20px rgba(15, 23, 42, 0.12)',
+                      }}
+                    >
+                      {WHATSAPP_TEMPLATES.map((tmpl) => {
+                        const checked = validSelectedTemplates.includes(tmpl.value);
+                        return (
+                          <label
+                            key={tmpl.value}
+                            role="option"
+                            aria-selected={checked}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.6rem',
+                              padding: '0.55rem 0.5rem',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => setSelectedTemplates((current) => (
+                                checked
+                                  ? WHATSAPP_TEMPLATES
+                                    .map((template) => template.value)
+                                    .filter((value) => current.includes(value) && value !== tmpl.value)
+                                  : [...validSelectedTemplates, tmpl.value]
+                              ))}
+                            />
+                            <span>{tmpl.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted, #64748b)' }}>
+                  Each selected template will be sent to every selected contact.
+                </div>
               </div>
 
               {/* 2. Select Contacts */}
@@ -842,7 +1180,7 @@ const WhatsApp = () => {
               backgroundColor: 'var(--bg-page, #f8fafc)'
             }}>
               <span style={{ fontSize: '0.875rem', color: 'var(--text-muted, #64748b)', fontWeight: 500 }}>
-                {selectedContacts.size} contact{selectedContacts.size === 1 ? '' : 's'} selected
+                {validSelectedTemplates.length} template{validSelectedTemplates.length === 1 ? '' : 's'} · {selectedContacts.size} contact{selectedContacts.size === 1 ? '' : 's'} selected
               </span>
 
               <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -861,7 +1199,7 @@ const WhatsApp = () => {
                   type="button"
                   className="btn btn-primary"
                   onClick={sendCampaign}
-                  disabled={campaignRunning || selectedContacts.size === 0}
+                  disabled={campaignRunning || validSelectedTemplates.length === 0 || selectedContacts.size === 0}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
                 >
                   {campaignRunning ? (
@@ -1057,6 +1395,7 @@ const WhatsApp = () => {
         type="whatsapp"
         statusUrl={apiUrl('/api/whatsapp/send-campaign/status')}
         onComplete={fetchDashboardData}
+        onDeliveryUpdate={refreshAfterDeliveryUpdate}
       />
     </div>
   );

@@ -5,6 +5,7 @@ export default function CampaignProgressWidget({
   type = 'email', // 'email' | 'whatsapp'
   statusUrl,
   onComplete,
+  onDeliveryUpdate,
 }) {
   const [data, setData] = useState({
     running: false,
@@ -21,7 +22,13 @@ export default function CampaignProgressWidget({
   const [minimized, setMinimized] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const wasRunningRef = useRef(false);
+  const statusVersionRef = useRef(null);
+  const onDeliveryUpdateRef = useRef(onDeliveryUpdate);
   const autoDismissTimerRef = useRef(null);
+
+  useEffect(() => {
+    onDeliveryUpdateRef.current = onDeliveryUpdate;
+  }, [onDeliveryUpdate]);
 
   const isEmail = type === 'email';
   const themeColor = isEmail ? '#3b82f6' : '#10b981';
@@ -35,6 +42,11 @@ export default function CampaignProgressWidget({
       const res = await fetch(statusUrl);
       if (!res.ok) return;
       const json = await res.json();
+      const statusVersion = Number(json.statusVersion || 0);
+      if (statusVersionRef.current !== null && statusVersion !== statusVersionRef.current) {
+        onDeliveryUpdateRef.current?.();
+      }
+      statusVersionRef.current = statusVersion;
 
       setData((prev) => {
         // Detect transition from running -> finished
@@ -313,7 +325,7 @@ export default function CampaignProgressWidget({
               marginBottom: '12px',
             }}
           >
-            {/* Sent */}
+            {/* Messages accepted by WhatsApp; delivery webhooks can later mark these failed. */}
             <div
               style={{
                 padding: '8px 4px',
@@ -324,7 +336,7 @@ export default function CampaignProgressWidget({
               }}
             >
               <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Sent
+                Accepted
               </div>
               <div style={{ fontSize: '1rem', fontWeight: 800, color: '#15803d', marginTop: '2px' }}>
                 {data.sent}
@@ -419,8 +431,8 @@ export default function CampaignProgressWidget({
                 )}
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: data.failed > 0 ? '#b91c1c' : '#15803d', fontWeight: 600 }}>
                   {data.failed > 0
-                    ? `Done: ${data.sent} sent, ${data.failed} failed${data.lastError ? ` (${data.lastError})` : ''}`
-                    : `Campaign completed! Sent: ${data.sent}, Failed: 0`}
+                    ? `Done: ${data.sent} accepted, ${data.failed} failed${data.lastError ? ` (${data.lastError})` : ''}`
+                    : `Campaign completed! Accepted: ${data.sent}, Failed: 0`}
                 </span>
               </>
             )}
