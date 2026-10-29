@@ -1472,6 +1472,8 @@ async function getWhatsAppConversation(whatsappNumber) {
           id: `chat-${entry.id}-${index}`,
           kind: 'message',
           direction: chat.direction || (entry.action === 'chat_sent' ? 'outbound' : 'inbound'),
+          messageId: chat.messageId || null,
+          templateName: chat.templateName || null,
           text: body || (chat.type && chat.type !== 'text' ? `[${chat.type} message]` : ''),
           type: chat.type || 'text',
           interactive: chat.interactive || null,

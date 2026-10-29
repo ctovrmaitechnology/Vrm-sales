@@ -3,7 +3,6 @@ const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const { startWhatsAppCampaign, getWhatsAppCampaignStatus, recordWhatsAppWebhookResult } = require('../controllers/whatsappController');
 const { decodeLeadRef } = require('../services/trackingService');
-const { getCampaign, isValidProduct, resolveProduct } = require('../productCampaigns');
 const { sendWhatsAppText, sendWhatsAppCtaUrl } = require('../services/whatsappService');
 const {
   updateWhatsAppLeadStatus,
@@ -14,11 +13,15 @@ const {
   recordWhatsAppOutboundChat,
 } = require('../unifiedDb');
 
+const WHATSAPP_TEMPLATE_VIDEO_URLS = {
+  workflow_final: 'https://drive.google.com/file/d/1aCEqwMIpUgY1NXAoTQqCbJIwqPutku3f/view?usp=sharing',
+  benchtodeploy_final: 'https://drive.google.com/file/d/1xtNqQX7qHogouW1wLUAz1dLt2o7N-KQQ/view?usp=sharing',
+};
+
 const WHATSAPP_BUTTON_DESTINATIONS = {
   video: {
     action: 'video_clicked',
     name: 'Demo Video',
-    url: 'https://drive.google.com/file/d/1Sr_sY-4mXjC_IwS3cT-xYXTbGhgswrQ4/view?usp=drive_link',
     displayText: 'Watch Demo Video',
     body: 'Tap below to watch our demo video.',
   },
@@ -31,27 +34,11 @@ const WHATSAPP_BUTTON_DESTINATIONS = {
   },
 };
 
-function getWhatsAppVideoDestination({ product, template }) {
-  const normalize = value => String(value || '').trim().toLowerCase();
-  const templateName = normalize(template);
-  const templateEnvKey = `WHATSAPP_TEMPLATE_VIDEO_URL_${templateName
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '')
-    .toUpperCase()}`;
-  const templateUrl = String(process.env[templateEnvKey] || '').trim();
-
-  const campaignProduct = isValidProduct(product) ? resolveProduct(product) : null;
-  const campaign = campaignProduct ? getCampaign(campaignProduct) : null;
-  const videoMatch = campaign?.email?.match(/Watch Demo Video:\s*(https:\/\/\S+)/i);
-  const destination = templateUrl || videoMatch?.[1] || WHATSAPP_BUTTON_DESTINATIONS.video.url;
-  let parsedDestination;
-  try {
-    parsedDestination = new URL(destination);
-  } catch {
-    throw new Error(`WhatsApp video destination in ${templateEnvKey} must be a valid HTTPS URL.`);
-  }
-  if (parsedDestination.protocol !== 'https:') {
-    throw new Error(`WhatsApp video destination in ${templateEnvKey} must be a valid HTTPS URL.`);
+function getWhatsAppVideoDestination(template) {
+  const templateName = String(template || '').trim().toLowerCase();
+  const destination = WHATSAPP_TEMPLATE_VIDEO_URLS[templateName];
+  if (!destination) {
+    throw new Error(`No demo-video destination is configured for WhatsApp template '${templateName || 'unknown'}'.`);
   }
   return destination;
 }
@@ -120,10 +107,7 @@ router.get('/button-click', async (req, res) => {
     try {
       button = {
         ...baseButton,
-        url: getWhatsAppVideoDestination({
-          product: req.query.product,
-          template: req.query.template,
-        }),
+        url: getWhatsAppVideoDestination(req.query.template),
       };
     } catch (error) {
       console.error('[WA Button] Invalid video destination:', error.message);
@@ -262,8 +246,34 @@ router.post('/webhook', async (req, res) => {
               await recordWhatsAppChat(msg.from, msg, contact?.profile?.name);
               console.log(`[WA Webhook] Stored inbound ${msg.type || 'unknown'} message from ${msg.from}`);
 
-              const button = getWhatsAppButtonReply(msg);
+              let button = getWhatsAppButtonReply(msg);
               if (!button) continue;
+
+              if (button.action === 'video_clicked') {
+                const conversation = await getWhatsAppConversation(msg.from);
+                const sourceMessage = conversation.find(
+                  (event) => msg.context?.id
+                    && event.messageId === msg.context.id
+                );
+                if (!sourceMessage?.templateName) {
+                  console.warn(
+                    `[WA Button] Cannot resolve the source template for demo-video reply from ${msg.from}; skipping generic video link.`
+                  );
+                  continue;
+                }
+                try {
+                  button = {
+                    ...button,
+                    url: getWhatsAppVideoDestination(sourceMessage.templateName),
+                  };
+                  console.log(
+                    `[WA Button] Resolved demo video for template '${sourceMessage.templateName}' to ${button.url}`
+                  );
+                } catch (error) {
+                  console.warn(`[WA Button] ${error.message}`);
+                  continue;
+                }
+              }
 
               let replyResult = null;
               let replyError = null;
