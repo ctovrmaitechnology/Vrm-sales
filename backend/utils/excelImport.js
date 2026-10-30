@@ -1,17 +1,23 @@
 const xlsx = require('xlsx');
 
-function sendTemplate(res, { filename, sheetName, columns, assignedUserName }) {
+function sendTemplate(res, { filename, sheetName, columns, assignedUserName, source }) {
   const workbook = xlsx.utils.book_new();
-  const defaultRow = columns.map((column) =>
-    column.trim().toLowerCase().replace(/[\s-]+/g, '_') === 'assigned_user_name'
-      ? assignedUserName
-      : ''
-  );
+  const defaultRow = columns.map((column) => {
+    const key = column.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (key === 'assigned_user_name') return assignedUserName || '';
+    if (key === 'source') return source || '';
+    return '';
+  });
   const dataSheet = xlsx.utils.aoa_to_sheet([columns, defaultRow]);
   const instructionsSheet = xlsx.utils.aoa_to_sheet([
-    ['Selected user', assignedUserName],
-    ['Instructions', 'Add one contact per row. The first data row has the selected user prefilled; copy that cell down for additional rows.'],
+    ['Field', 'Value'],
+    ['Source', source || ''],
+    ['Assigned User', assignedUserName || ''],
+    ['Selected user', assignedUserName || ''],
+    ['Selected source', source || ''],
+    ['Instructions', 'Add one contact per row. The first data row has the selected user and source prefilled; copy those cells down for additional rows.'],
     ['Per-row assignment', 'Change Assigned User Name on a row to assign it to another active user.'],
+    ['Source field', 'Source can be specified per row, or kept as the prefilled source.'],
     ['Required field', 'Full Name'],
     ['Optional fields', 'Email, phone numbers, company, role, links, source, note, and address'],
   ]);

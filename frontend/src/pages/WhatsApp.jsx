@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Send, Loader2, X, RefreshCw, CheckCheck, Eye } from 'lucide-react';
+import {
+  Send, Loader2, X, RefreshCw, CheckCheck, Search,
+  CheckSquare, Filter, Download, ChevronDown, ChevronLeft, ChevronRight,
+  MoreVertical, Trash2, Copy, CheckCircle2, XCircle, Clock, ArrowUpDown, Check, MessageCircle, Calendar
+} from 'lucide-react';
 import CampaignProgressWidget from '../components/CampaignProgressWidget';
-import TablePagination from '../components/TablePagination';
 import TableFilters from '../components/TableFilters';
 import useTableFilters from '../hooks/useTableFilters';
 import useTablePagination from '../hooks/useTablePagination';
+import HeaderUserMenu from '../components/HeaderUserMenu';
+import '../styles/whatsapp.css';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
@@ -16,6 +21,49 @@ const WHATSAPP_TEMPLATES = [
 ];
 
 const EMPTY_LIST = [];
+
+const formatPhoneNumber = (phone) => {
+  if (!phone) return '-';
+  const clean = String(phone).trim();
+  if (clean.startsWith('+91') && clean.length > 3) {
+    const rest = clean.slice(3).trim();
+    if (rest.length === 10) {
+      return `+91 ${rest.slice(0, 5)} ${rest.slice(5)}`;
+    }
+    return `+91 ${rest}`;
+  }
+  return clean;
+};
+
+const getInitials = (name) => {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return parts[0].slice(0, 1).toUpperCase();
+};
+
+const AVATAR_PALETTES = [
+  { bg: '#dbeafe', color: '#1d4ed8' }, // Blue (IS row 1)
+  { bg: '#ffe4e6', color: '#e11d48' }, // Rose/Red (IS row 2)
+  { bg: '#dcfce7', color: '#15803d' }, // Green (R row 3)
+  { bg: '#f3e8ff', color: '#7e22ce' }, // Purple (K row 4)
+  { bg: '#cffafe', color: '#0e7490' }, // Cyan (P row 5)
+  { bg: '#ffedd5', color: '#c2410c' }, // Amber/Orange (M row 6)
+];
+
+const getAvatarStyle = (name, index = 0) => {
+  return AVATAR_PALETTES[index % AVATAR_PALETTES.length];
+};
+
+const getUserAvatarStyle = (username) => {
+  if (!username || username === '-' || username === '--') return null;
+  const firstChar = username.trim().charAt(0).toLowerCase();
+  if (firstChar === 's') return { bg: '#ede9fe', color: '#6d28d9' };
+  if (firstChar === 'r') return { bg: '#ffedd5', color: '#ea580c' };
+  return { bg: '#e0e7ff', color: '#4338ca' };
+};
 const isAcceptedWhatsAppStatus = (status) => ['accepted', 'sent', 'delivered', 'read'].includes(status);
 const getCurrentTemplateStatuses = (lead) =>
   (lead.whatsappTemplateStatuses || []).filter((item) =>
@@ -113,6 +161,7 @@ const WhatsApp = () => {
         }]
         : []),
     ],
+    dateField: (lead) => lead.created_at || lead.createdAt,
   }), [activeTab]);
   const whatsappFilters = useTableFilters(leads, whatsappFilterConfig);
 
@@ -130,7 +179,21 @@ const WhatsApp = () => {
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState('');
   const chatMessagesRef = useRef(null);
+  const searchInputRef = useRef(null);
   const deliveryRefreshTimerRef = useRef(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [copiedPhone, setCopiedPhone] = useState('');
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
   const validSelectedTemplates = WHATSAPP_TEMPLATES
     .map((template) => template.value)
     .filter((value) => selectedTemplates.includes(value));
@@ -320,29 +383,47 @@ const WhatsApp = () => {
     sent: 'No sent messages found.',
   };
 
+  const notSentCount = useMemo(() => filteredLeads.filter(hasUnsentWhatsAppTemplate).length, [filteredLeads]);
+  const sentCount = useMemo(() => filteredLeads.filter(hasSentWhatsAppTemplate).length, [filteredLeads]);
+
+  const exportToCsv = () => {
+    const dataToExport = tabLeads.map((lead) => ({
+      Name: lead.name || '',
+      Type: lead.isCompanyContact || lead.type === 'Company' ? 'Company' : 'Lead',
+      'Assigned User': lead.createdByName || '',
+      Phone: getPhone(lead) || '',
+      'Sent Status': hasFailedWhatsAppTemplate(lead) ? 'Failed' : hasSentWhatsAppTemplate(lead) ? 'Sent' : 'Not Sent',
+      'Delivery Status': getLeadFailureReason(lead) || ''
+    }));
+    if (dataToExport.length === 0) return;
+    const headers = Object.keys(dataToExport[0]).join(',');
+    const rows = dataToExport.map((row) =>
+      Object.values(row).map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')
+    );
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `whatsapp_${activeTab}_leads.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const renderLeadsTable = (tableLeads, tableType) => (
-    <div className="wa-table-container" style={{ minWidth: 0 }}>
-      <div className="wa-table-scroll">
-        <table className="wa-table wa-table-compact">
-          <colgroup>
-            <col style={{ width: '4%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '7%' }} />
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '9%' }} />
-            <col style={{ width: tableType === 'sent' ? '23%' : '27%' }} />
-            <col style={{ width: tableType === 'sent' ? '8%' : '9%' }} />
-            {tableType === 'sent' && <col style={{ width: '6%' }} />}
-            <col style={{ width: tableType === 'sent' ? '9%' : '10%' }} />
-          </colgroup>
+    <div className="wa-table-container-wrapper" style={{ minWidth: 0 }}>
+      <div className="wa-cards-table-container">
+        <table className="wa-cards-table">
           <thead>
             <tr>
-              <th className="wa-text-center">
+              <th style={{ width: '38px', textAlign: 'center', padding: '0.5rem 0.25rem' }}>
                 <input
                   type="checkbox"
                   aria-label="Select all contacts on this page"
-                  checked={tablePagination.pageItems.filter(hasPhone).length > 0 && tablePagination.pageItems.filter(hasPhone).every((lead) => selectedContacts.has(getPhone(lead)))}
+                  checked={
+                    tablePagination.pageItems.filter(hasPhone).length > 0 &&
+                    tablePagination.pageItems.filter(hasPhone).every((lead) => selectedContacts.has(getPhone(lead)))
+                  }
                   onChange={() => {
                     const eligible = tablePagination.pageItems.filter(hasPhone);
                     const allSelected = eligible.length > 0 && eligible.every((lead) => selectedContacts.has(getPhone(lead)));
@@ -357,162 +438,285 @@ const WhatsApp = () => {
                   }}
                 />
               </th>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Assigned User</th>
-              <th>Phone Number</th>
-              <th className="wa-text-center">Sent Status</th>
-              <th>Template delivery status</th>
-              <th className="wa-text-center">Conversation</th>
-              {tableType === 'sent' && <th className="wa-text-center">Read</th>}
-              <th className="wa-text-right">Actions</th>
+              <th style={{ width: '13%' }}>
+                <span className="wa-th-content">Name <span className="wa-sort-arrows">↑↓</span></span>
+              </th>
+              <th style={{ width: '5.5%' }}>
+                <span className="wa-th-content">Type <span className="wa-sort-arrows">↑↓</span></span>
+              </th>
+              <th style={{ width: '10%' }}>
+                <span className="wa-th-content">Assigned User <span className="wa-sort-arrows">↑↓</span></span>
+              </th>
+              <th style={{ width: '13%' }}>
+                <span className="wa-th-content">Phone Number <span className="wa-sort-arrows">↑↓</span></span>
+              </th>
+              <th style={{ width: '8.5%' }}>
+                <span className="wa-th-content">Sent Status <span className="wa-sort-arrows">↑↓</span></span>
+              </th>
+              <th style={{ width: '22%' }}>
+                <span className="wa-th-content">Template Delivery Status <span className="wa-sort-arrows">↑↓</span></span>
+              </th>
+              <th style={{ width: '7.5%', textAlign: 'center' }}>
+                <span className="wa-th-content" style={{ justifyContent: 'center' }}>Conversation <span className="wa-sort-arrows">↑↓</span></span>
+              </th>
+              <th style={{ width: '5%', textAlign: 'center' }}>
+                <span className="wa-th-content" style={{ justifyContent: 'center' }}>Read <span className="wa-sort-arrows">↑↓</span></span>
+              </th>
+              <th style={{ width: '11%', textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {tablePagination.pageItems.length > 0 ? tablePagination.pageItems.map((lead) => {
-              const phone = getPhone(lead);
-              const isSent = hasSentWhatsAppTemplate(lead);
-              const isCompany = lead.isCompanyContact || lead.type === 'Company';
-              const isChecked = Boolean(phone && selectedContacts.has(phone));
-              const templateStatuses = getCurrentTemplateStatuses(lead);
+            {tablePagination.pageItems.length > 0 ? (
+              tablePagination.pageItems.map((lead, index) => {
+                const phone = getPhone(lead);
+                const isSent = hasSentWhatsAppTemplate(lead);
+                const isFailed = hasFailedWhatsAppTemplate(lead);
+                const isCompany = lead.isCompanyContact || lead.type === 'Company';
+                const isChecked = Boolean(phone && selectedContacts.has(phone));
+                const templateStatuses = getCurrentTemplateStatuses(lead);
+                const avatar = getAvatarStyle(lead.name, index);
+                const initials = getInitials(lead.name);
+                const userAvatar = getUserAvatarStyle(lead.createdByName);
+                const userInitial = (lead.createdByName || '').trim().charAt(0).toUpperCase();
 
-              return (
-                <tr key={lead.id || phone || lead.email || lead.name} className={lead.read ? 'wa-table-row-success' : 'wa-table-row-default'}>
-                  <td className="wa-text-center">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${lead.name || 'contact'}`}
-                      checked={isChecked}
-                      disabled={!phone}
-                      onChange={() => toggleContact(lead)}
-                    />
-                  </td>
-                  <td className="wa-text-primary" style={{ fontWeight: 600 }}>{lead.name || '-'}</td>
-                  <td>
-                    <span style={{
-                      display: 'inline-block', padding: '2px 8px', borderRadius: '4px',
-                      fontSize: '0.72rem', fontWeight: 700,
-                      backgroundColor: isCompany ? '#d1fae5' : '#dbeafe',
-                      color: isCompany ? '#065f46' : '#1e40af'
-                    }}>{isCompany ? 'Company' : 'Lead'}</span>
-                  </td>
-                  <td className="wa-text-secondary">{lead.createdByName || '-'}</td>
-                  <td className="wa-text-secondary">{phone || '-'}</td>
-                  <td className="wa-text-center">
-                    {isSent && hasFailedWhatsAppTemplate(lead)
-                      ? <span className="wa-badge wa-badge-red">Partially failed</span>
-                      : hasFailedWhatsAppTemplate(lead)
-                        ? <span className="wa-badge wa-badge-red">Failed</span>
-                      : isSent
-                        ? <span className="wa-badge wa-badge-blue">Sent</span>
-                        : <span className="wa-badge wa-badge-gray">Not Sent</span>}
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.55rem' }}>
-                      {templateStatuses.length === 0 && isSent ? (
-                        <span style={{ fontSize: '0.8rem', color: '#4b5563', whiteSpace: 'normal' }}>
-                          Sent — template-specific status unavailable
-                        </span>
-                      ) : templateStatuses.length === 0 && hasFailedWhatsAppTemplate(lead) ? (
-                        <span style={{ fontSize: '0.8rem', color: '#991b1b', whiteSpace: 'normal' }}>
-                          Failed: {formatFailureReason(lead.failureReason)}
-                        </span>
-                      ) : WHATSAPP_TEMPLATES.map((template) => {
-                        const message = templateStatuses.find((item) => item.templateName === template.templateName);
-                        const status = message?.status || 'not_sent';
-                        const isFailed = status === 'failed';
-                        const isAccepted = isAcceptedWhatsAppStatus(status);
-                        const statusLabel = isFailed
-                          ? 'Failed'
-                          : status === 'accepted'
-                            ? 'Accepted'
-                            : status === 'delivered'
-                              ? 'Delivered'
-                              : status === 'read'
-                                ? 'Read'
-                                : isAccepted
-                                  ? 'Sent'
-                                  : 'Not sent';
-                        return (
-                          <div key={template.templateName} style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                            <span style={{
-                              fontSize: '0.8rem',
-                              fontWeight: 600,
-                              color: isFailed ? '#991b1b' : isAccepted ? '#166534' : '#4b5563',
-                            }}>
-                              {template.templateName}: {statusLabel}
-                            </span>
-                            {isFailed && (
-                              <span style={{ fontSize: '0.78rem', color: '#991b1b', whiteSpace: 'normal' }}>
-                                {formatFailureReason(message.failureReason)}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </td>
-                  <td className="wa-text-center">
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        setChatLead(lead);
-                        setChatDraft('');
-                        setChatError('');
-                      }}
-                      disabled={!phone}
-                      style={{
-                        padding: '0.3rem 0.7rem',
-                        fontSize: '0.8rem',
-                        ...(lead.hasWhatsAppReply
-                          ? { backgroundColor: '#16a34a', borderColor: '#16a34a', color: '#fff' }
-                          : {}),
-                      }}
-                    >
-                      View
-                    </button>
-                  </td>
-                  {tableType === 'sent' && (
-                    <td className="wa-text-center">
-                      {lead.read ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb', verticalAlign: 'middle' }} title="Read"><CheckCheck size={20} strokeWidth={2.5} /></span> : <span style={{ color: '#9ca3af' }}>-</span>}
+                return (
+                  <tr
+                    key={lead.id || phone || lead.email || lead.name}
+                    className={isChecked ? 'wa-row-selected' : ''}
+                  >
+                    <td style={{ textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${lead.name || 'contact'}`}
+                        checked={isChecked}
+                        disabled={!phone}
+                        onChange={() => toggleContact(lead)}
+                      />
                     </td>
-                  )}
-                  <td className="wa-text-right wa-table-actions">
-                    <button
-                      type="button"
-                      onClick={() => setFailureDetailLead(lead)}
-                      aria-label={`View delivery details for ${lead.name || phone || 'contact'}`}
-                      title="View template delivery details"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '0.4rem',
-                        marginRight: '0.35rem',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '6px',
-                        background: 'transparent',
-                        color: '#4b5563',
-                        cursor: 'pointer',
-                        verticalAlign: 'middle',
-                      }}
-                    >
-                      <Eye size={16} />
-                    </button>
-                    <button onClick={() => deleteLead(lead)} className="wa-btn-danger">Delete</button>
-                  </td>
-                </tr>
-              );
-            }) : (
-              <tr><td colSpan={tableType === 'sent' ? 10 : 9} className="wa-text-center wa-text-secondary" style={{ padding: '3rem 1.5rem' }}>
-                {emptyMessages[tableType]}
-              </td></tr>
+                    <td style={{ overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                        <span
+                          className="wa-avatar-bubble"
+                          style={{ backgroundColor: avatar.bg, color: avatar.color }}
+                        >
+                          {initials}
+                        </span>
+                        <span style={{ fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {lead.name || '-'}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="wa-type-badge-blue">
+                        {isCompany ? 'Company' : 'Lead'}
+                      </span>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {lead.createdByName && lead.createdByName !== '-' && lead.createdByName !== '--' && lead.createdByName !== 'null' ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {userAvatar && (
+                            <span
+                              className="wa-user-avatar-bubble"
+                              style={{ backgroundColor: userAvatar.bg, color: userAvatar.color }}
+                            >
+                              {userInitial}
+                            </span>
+                          )}
+                          <span style={{ color: '#475569', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {lead.createdByName}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ color: '#94a3b8', letterSpacing: '0.15em' }}>- -</span>
+                      )}
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap' }}>
+                        <span className="wa-phone-wa-icon" title="WhatsApp Contact">
+                          <MessageCircle size={13} color="#22c55e" fill="#dcfce7" strokeWidth={2.2} />
+                        </span>
+                        <span style={{ color: '#334155', fontWeight: 500, fontSize: '0.82rem' }}>
+                          {formatPhoneNumber(phone)}
+                        </span>
+                        {phone && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(phone);
+                              setCopiedPhone(phone);
+                              setTimeout(() => setCopiedPhone(''), 1500);
+                            }}
+                            className="wa-copy-btn"
+                            title={copiedPhone === phone ? 'Copied!' : 'Copy phone number'}
+                          >
+                            {copiedPhone === phone ? (
+                              <Check size={12} color="#16a34a" />
+                            ) : (
+                              <Copy size={12} color="#94a3b8" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      {isFailed ? (
+                        <span className="wa-status-pill wa-status-failed">
+                          <XCircle size={12} /> Failed
+                        </span>
+                      ) : isSent ? (
+                        <span className="wa-status-pill wa-status-sent">
+                          <CheckCircle2 size={12} /> Sent
+                        </span>
+                      ) : (
+                        <span className="wa-status-pill wa-status-notsent">
+                          <Clock size={12} /> Not Sent
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', wordBreak: 'break-word' }}>
+                        {WHATSAPP_TEMPLATES.map((tmpl) => {
+                          const tStatus = templateStatuses.find((item) => item.templateName === tmpl.templateName);
+                          const isTmplFailed = tStatus?.status === 'failed' || (!tStatus && isFailed && !isSent);
+                          const isTmplDelivered = tStatus && isAcceptedWhatsAppStatus(tStatus.status);
+
+                          if (isTmplFailed) {
+                            return (
+                              <div key={tmpl.templateName} style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#dc2626', fontSize: '0.78rem', fontWeight: 600 }}>
+                                  <span style={{ fontSize: '0.9rem', lineHeight: 1, color: '#dc2626' }}>●</span>
+                                  <span>{tmpl.templateName}: Failed</span>
+                                </div>
+                                <div style={{ paddingLeft: '0.85rem', fontSize: '0.72rem', color: '#ef4444', fontWeight: 500 }}>
+                                  {formatFailureReason(tStatus?.failureReason || lead.failureReason || 'Message Undeliverable')}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          if (isTmplDelivered) {
+                            return (
+                              <div key={tmpl.templateName} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#16a34a', fontSize: '0.78rem', fontWeight: 600 }}>
+                                <span style={{ fontSize: '0.9rem', lineHeight: 1, color: '#16a34a' }}>●</span>
+                                <span>{tmpl.templateName}: {tStatus.status}</span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div key={tmpl.templateName} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#64748b', fontSize: '0.78rem', fontWeight: 500 }}>
+                              <span style={{ fontSize: '0.9rem', lineHeight: 1, color: '#94a3b8' }}>●</span>
+                              <span>{tmpl.templateName}: Not sent</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <button
+                        type="button"
+                        className="wa-btn-view"
+                        onClick={() => {
+                          setChatLead(lead);
+                          setChatDraft('');
+                          setChatError('');
+                        }}
+                        disabled={!phone}
+                        title={phone ? 'View conversation' : 'No phone number'}
+                      >
+                        View
+                      </button>
+                    </td>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {lead.read ? (
+                        <CheckCheck size={18} color="#2563eb" strokeWidth={2.5} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+                      ) : (
+                        <span style={{ color: '#94a3b8', fontSize: '1rem', fontWeight: 600 }}>-</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          className="wa-btn-more-dots"
+                          title="Details"
+                          onClick={() => setFailureDetailLead(lead)}
+                        >
+                          <MoreVertical size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteLead(lead)}
+                          className="wa-btn-card-delete"
+                        >
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={10} style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#94a3b8', background: '#ffffff', borderRadius: '12px' }}>
+                  {emptyMessages[tableType]}
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
       </div>
-      <TablePagination {...tablePagination} />
+
+      {/* Footer Pagination matching Image 1 */}
+      <div className="wa-table-footer">
+        <div className="wa-footer-left">
+          Showing {tabLeads.length === 0 ? 0 : (tablePagination.page - 1) * tablePagination.pageSize + 1} to {Math.min(tablePagination.page * tablePagination.pageSize, tabLeads.length)} of {tabLeads.length} results
+        </div>
+        <div className="wa-footer-right">
+          <button
+            type="button"
+            className="wa-pg-nav-btn"
+            onClick={() => tablePagination.setPage(Math.max(1, tablePagination.page - 1))}
+            disabled={tablePagination.page <= 1}
+            aria-label="Previous page"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          {Array.from({ length: tablePagination.pageCount }, (_, i) => i + 1).map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`wa-pg-num-btn ${p === tablePagination.page ? 'wa-pg-num-active' : ''}`}
+              onClick={() => tablePagination.setPage(p)}
+            >
+              {p}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="wa-pg-nav-btn"
+            onClick={() => tablePagination.setPage(Math.min(tablePagination.pageCount, tablePagination.page + 1))}
+            disabled={tablePagination.page >= tablePagination.pageCount}
+            aria-label="Next page"
+          >
+            <ChevronRight size={16} />
+          </button>
+          <span className="wa-rows-label">Rows per page</span>
+          <div className="wa-rows-select-wrap">
+            <select
+              aria-label="Rows per page"
+              value={tablePagination.pageSize}
+              onChange={(e) => tablePagination.setPageSize(Number(e.target.value))}
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <ChevronDown size={14} className="wa-rows-arrow" />
+          </div>
+        </div>
+      </div>
     </div>
   );
 
@@ -617,11 +821,86 @@ const WhatsApp = () => {
   return (
     <div className="wa-dashboard">
       {/* TOP HEADER */}
-      <header className="wa-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+      <header className="wa-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
         <h1 className="wa-header-title">
           WhatsApp Overview
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {/* Date Range Picker matching image */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.45rem 0.85rem',
+              border: (whatsappFilters.fromDate || whatsappFilters.toDate) ? '1.5px solid #3b82f6' : '1px solid #cbd5e1',
+              borderRadius: '10px',
+              backgroundColor: '#ffffff',
+              color: '#1e293b',
+              fontSize: '0.82rem',
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Calendar size={15} style={{ color: (whatsappFilters.fromDate || whatsappFilters.toDate) ? '#2563eb' : '#64748b', flexShrink: 0 }} />
+            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: (whatsappFilters.fromDate || whatsappFilters.toDate) ? '#1d4ed8' : '#475569' }}>From:</span>
+            <input
+              type="date"
+              value={whatsappFilters.fromDate || ''}
+              onChange={(e) => whatsappFilters.setFromDate(e.target.value)}
+              aria-label="Filter from date"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                fontSize: '0.82rem',
+                color: '#0f172a',
+                outline: 'none',
+                padding: '0',
+                width: '125px',
+                fontFamily: 'inherit',
+              }}
+            />
+            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>—</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: (whatsappFilters.fromDate || whatsappFilters.toDate) ? '#1d4ed8' : '#475569' }}>To:</span>
+            <input
+              type="date"
+              value={whatsappFilters.toDate || ''}
+              onChange={(e) => whatsappFilters.setToDate(e.target.value)}
+              aria-label="Filter to date"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                fontSize: '0.82rem',
+                color: '#0f172a',
+                outline: 'none',
+                padding: '0',
+                width: '125px',
+                fontFamily: 'inherit',
+              }}
+            />
+            {(whatsappFilters.fromDate || whatsappFilters.toDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  whatsappFilters.setFromDate('');
+                  whatsappFilters.setToDate('');
+                }}
+                title="Clear date range"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: '#94a3b8',
+                }}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
           <button
             onClick={fetchDashboardData}
             disabled={refreshing}
@@ -646,145 +925,193 @@ const WhatsApp = () => {
           </button>
         </div>
       </header>
+
       {leadsQuery.error && (
         <div role="alert" style={{ color: '#b91c1c', marginBottom: '1rem' }}>
           {leadsQuery.error.message}
         </div>
       )}
 
-      {/* TABS */}
+      {/* 1. OVERVIEW CARDS */}
+      <div className="wa-cards-grid" style={{ marginBottom: '1.75rem' }}>
+        {/* Total Leads Card */}
+        <div className="wa-card">
+          <p className="wa-card-label wa-card-label-default">Total Leads</p>
+          <h2 className="wa-card-value wa-card-value-default">{dashboardData.totalLeads}</h2>
+        </div>
+
+        {/* WhatsApp Sent Card */}
+        <div className="wa-card wa-card-blue">
+          <p className="wa-card-label wa-card-label-blue">WhatsApp Sent</p>
+          <h2 className="wa-card-value wa-card-value-blue">{dashboardData.whatsappSent}</h2>
+        </div>
+
+        {/* Messages Read Card */}
+        <div className="wa-card wa-card-green">
+          <p className="wa-card-label wa-card-label-green">Messages Read</p>
+          <h2 className="wa-card-value wa-card-value-green">{dashboardData.readCount}</h2>
+        </div>
+
+        {/* Unread / Pending Card */}
+        <div className="wa-card wa-card-purple">
+          <p className="wa-card-label wa-card-label-purple">Unread / Pending</p>
+          <h2 className="wa-card-value wa-card-value-purple">{dashboardData.unreadCount}</h2>
+        </div>
+      </div>
+
+      {/* 2. FILTER CARD */}
       <div
-        role="tablist"
         style={{
+          backgroundColor: '#ffffff',
+          borderRadius: '16px',
+          border: '1px solid rgba(220, 234, 250, 0.95)',
+          boxShadow: '0 4px 18px rgba(180, 205, 235, 0.16)',
+          padding: '1.15rem 1.35rem',
+          marginBottom: '1.5rem',
           display: 'flex',
-          gap: '0.5rem',
-          padding: '0 2rem',
-          marginTop: '1rem',
-          borderBottom: '1px solid var(--border-color, #e5e7eb)'
+          flexDirection: 'column',
+          gap: '0.85rem',
         }}
       >
-        {TABS.map((tab) => {
-          const active = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              role="tab"
-              aria-selected={active}
-              onClick={() => {
-                whatsappFilters.clearFilters();
-                setActiveTab(tab.key);
-              }}
-              style={{
-                padding: '0.75rem 0.5rem',
-                marginRight: '0.75rem',
-                background: 'none',
-                border: 'none',
-                borderBottom: active ? '2px solid var(--primary, #3b5bff)' : '2px solid transparent',
-                marginBottom: '-1px',
-                color: active ? 'var(--primary, #3b5bff)' : 'var(--text-muted, #64748b)',
-                fontWeight: 700,
-                fontSize: '1rem',
-                cursor: 'pointer'
-              }}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
+        {/* Filters */}
+        <div>
+          <TableFilters
+            {...whatsappFilters}
+            setFromDate={undefined}
+            setToDate={undefined}
+            showSearch={false}
+            hasFilters={whatsappFilters.hasFilters || Boolean(searchTerm)}
+            clearFilters={() => {
+              whatsappFilters.clearFilters();
+              setSearchTerm('');
+            }}
+          />
+        </div>
       </div>
 
-      {/* SEARCH AND SELECTION BAR */}
-      <div style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: "1rem",
-        padding: "0 2rem",
-        marginTop: "1.5rem",
-        marginBottom: "1rem"
-      }}>
-        <div>
-          {selectedContacts.size > 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-              <span style={{ fontSize: '0.875rem', color: 'var(--primary, #3b5bff)', fontWeight: 600 }}>
-                ✓ {selectedContacts.size} contact{selectedContacts.size === 1 ? '' : 's'} selected
-              </span>
+      {/* 3. TABLE TOOLBAR (TABS ON LEFT, SEARCH & TOOLS ON RIGHT) */}
+      <div className="wa-table-toolbar">
+        {/* Left: Dual Pill Tabs */}
+        <div className="wa-pill-tabs">
+          <button
+            type="button"
+            className={`wa-pill-tab ${activeTab === 'notsent' ? 'wa-pill-tab-active' : ''}`}
+            onClick={() => {
+              whatsappFilters.clearFilters();
+              setActiveTab('notsent');
+            }}
+          >
+            <Send size={14} className="wa-pill-icon" />
+            <span>Not Sent</span>
+            <span className="wa-pill-badge">{notSentCount}</span>
+          </button>
+          <button
+            type="button"
+            className={`wa-pill-tab ${activeTab === 'sent' ? 'wa-pill-tab-active' : ''}`}
+            onClick={() => {
+              whatsappFilters.clearFilters();
+              setActiveTab('sent');
+            }}
+          >
+            <CheckSquare size={14} className="wa-pill-icon" />
+            <span>Sent</span>
+            <span className="wa-pill-badge">{sentCount}</span>
+          </button>
+        </div>
+
+        {/* Right: Search, Filters Button, Export Button */}
+        <div className="wa-toolbar-actions">
+          <div className="wa-capsule-search">
+            <Search size={15} color="#94a3b8" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search by name, phone, user..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm ? (
               <button
                 type="button"
-                onClick={deleteSelectedLeads}
-                className="wa-btn-danger"
+                onClick={() => setSearchTerm('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '2px',
+                  cursor: 'pointer',
+                  color: '#94a3b8',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+                title="Clear search"
               >
-                Delete selected
+                <X size={13} />
               </button>
-            </div>
-          ) : (
-            <span style={{ fontSize: '0.875rem', color: 'var(--text-muted, #64748b)' }}>
-              Select contacts from table or click &ldquo;Send Campaign&rdquo; to launch
-            </span>
-          )}
+            ) : (
+              <span className="wa-kbd-shortcut">Ctrl K</span>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className={`wa-btn-filter ${showFilters ? 'wa-btn-filter-active' : ''}`}
+            onClick={() => setShowFilters((prev) => !prev)}
+            title="Toggle filters"
+          >
+            <Filter size={15} color={showFilters ? '#4338ca' : '#6366f1'} />
+            <span>Filters</span>
+            {whatsappFilters.hasFilters && <span className="wa-filter-badge-dot" />}
+          </button>
+
+          <button
+            type="button"
+            className="wa-btn-export"
+            onClick={exportToCsv}
+            title="Export to CSV"
+          >
+            <Download size={15} color="#4f46e5" />
+            <span>Export</span>
+            <ChevronDown size={14} color="#64748b" />
+          </button>
         </div>
-        <input
-          type="text"
-          placeholder="Search WhatsApp leads..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{
-            width: "300px",
-            maxWidth: "100%",
-            padding: "8px 12px",
-            border: "1px solid var(--border-color, #d1d5db)",
-            borderRadius: "8px",
-            fontSize: "14px",
-            backgroundColor: "var(--bg-card, #ffffff)",
-            color: "var(--text-dark, inherit)"
-          }}
-        />
-      </div>
-      <div style={{ padding: '0 2rem' }}>
-        <TableFilters
-          {...whatsappFilters}
-          showSearch={false}
-          hasFilters={whatsappFilters.hasFilters || Boolean(searchTerm)}
-          clearFilters={() => {
-            whatsappFilters.clearFilters();
-            setSearchTerm('');
-          }}
-        />
       </div>
 
-      <div className="wa-container" style={{ paddingTop: 0 }}>
-        {/* OVERVIEW CARDS */}
-        <div className="wa-cards-grid">
-          {/* Total Leads Card */}
-          <div className="wa-card">
-            <p className="wa-card-label wa-card-label-default">Total Leads</p>
-            <h2 className="wa-card-value wa-card-value-default">{dashboardData.totalLeads}</h2>
+      {/* 4. SELECTION BANNER (IF CONTACTS ARE SELECTED) */}
+      {selectedContacts.size > 0 && (
+        <div className="wa-selection-banner">
+          <div className="wa-selection-info">
+            <CheckCheck size={16} />
+            <span>{selectedContacts.size} contact{selectedContacts.size === 1 ? '' : 's'} selected</span>
           </div>
-
-          {/* WhatsApp Sent Card */}
-          <div className="wa-card wa-card-blue">
-            <p className="wa-card-label wa-card-label-blue">WhatsApp Sent</p>
-            <h2 className="wa-card-value wa-card-value-blue">{dashboardData.whatsappSent}</h2>
-          </div>
-
-          {/* Messages Read Card */}
-          <div className="wa-card wa-card-green">
-            <p className="wa-card-label wa-card-label-green">Messages Read</p>
-            <h2 className="wa-card-value wa-card-value-green">{dashboardData.readCount}</h2>
-          </div>
-
-          {/* Unread / Pending Card */}
-          <div className="wa-card wa-card-purple">
-            <p className="wa-card-label wa-card-label-purple">Unread / Pending</p>
-            <h2 className="wa-card-value wa-card-value-purple">{dashboardData.unreadCount}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={deleteSelectedLeads}
+              className="wa-btn-danger"
+            >
+              Delete selected
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedContacts(new Set())}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#64748b',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
+              Deselect all
+            </button>
           </div>
         </div>
+      )}
 
-        {/* TABLE FOR THE ACTIVE TAB */}
-        <div style={{ marginBottom: '2rem' }}>
-          {renderLeadsTable(tabLeads, activeTab)}
-        </div>
+      {/* 5. TABLE FOR THE ACTIVE TAB */}
+      <div style={{ marginTop: '0.5rem', marginBottom: '2rem' }}>
+        {renderLeadsTable(tabLeads, activeTab)}
       </div>
 
       {failureDetailContact && (
@@ -1028,7 +1355,7 @@ const WhatsApp = () => {
                   )}
                 </div>
                 <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted, #64748b)' }}>
-                  Each selected template will be sent to every selected contact.
+                  Each selected template will be sent sequentially (first message immediately, with a 2-minute delay between consecutive messages).
                 </div>
               </div>
 

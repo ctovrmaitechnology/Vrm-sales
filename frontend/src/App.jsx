@@ -11,6 +11,8 @@ import Leads from './pages/Leads';
 import Facebook from './pages/Facebook';
 import Company from './pages/Company';
 import Users from './pages/Users';
+import Calls from './pages/Calls';
+import Insights from './pages/Insights';
 
 import Dashboard from './old-email-components/Dashboard';
 import UploadLeads from './old-email-components/UploadLeads';
@@ -53,6 +55,9 @@ function App() {
               <Route path="leads" element={<Leads />} />
               <Route path="facebook" element={<Facebook />} />
               <Route path="company" element={<Company />} />
+              <Route path="calls" element={<Calls />} />
+              <Route path="insights" element={<Insights />} />
+              <Route path="insight" element={<Navigate to="/app/insights" replace />} />
               <Route path="users" element={<Users />} />
             </Route>
 

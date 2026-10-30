@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import AuroraBackground from '../components/AuroraBackground';
 
 function Login() {
 
@@ -45,68 +46,94 @@ function Login() {
   return (
     <div
       style={{
-        height: '100vh',
+        position: 'relative',
+        minHeight: '100vh',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        background: '#f4f7fb',
+        overflow: 'hidden',
+        background: '#f4f8ff',
       }}
     >
+      <AuroraBackground />
       <div
         style={{
-          width: '400px',
-          background: '#fff',
+          position: 'relative',
+          zIndex: 1,
+          width: '100%',
+          maxWidth: '420px',
+          margin: '1.5rem',
+          background: '#ffffff',
           padding: '40px',
-          borderRadius: '12px',
-          boxShadow: '0 0 20px rgba(0,0,0,0.1)',
+          borderRadius: '16px',
+          border: '1px solid rgba(220, 232, 248, 0.9)',
+          boxShadow: '0 12px 32px -4px rgba(180, 205, 235, 0.25), 0 4px 12px -2px rgba(180, 205, 235, 0.12)',
         }}
       >
-        <h2
-          style={{
-            textAlign: 'center',
-            marginBottom: '30px',
-            color: '#333',
-          }}
-        >
-          Login
-        </h2>
+        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+          <img
+            src="/vrmLogo.png"
+            alt="VRM Logo"
+            style={{ width: '44px', height: '44px', objectFit: 'contain', marginBottom: '12px' }}
+          />
+          <h2
+            style={{
+              margin: '0 0 6px',
+              fontSize: '1.5rem',
+              fontWeight: 700,
+              color: '#0f172a',
+              letterSpacing: '-0.02em',
+            }}
+          >
+            VRM Sales Agent
+          </h2>
+          <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>
+            Sign in to access your sales workspace
+          </p>
+        </div>
 
         <form onSubmit={handleLogin}>
 
           {/* EMAIL */}
           <div style={{ marginBottom: '20px' }}>
-            <label>Email</label>
-
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+              Email address
+            </label>
             <input
               type="email"
               name="email"
-              placeholder="Enter your email"
+              placeholder="name@company.com"
               value={formData.email}
               onChange={handleChange}
               required
               style={{
                 width: '100%',
-                padding: '12px',
-                marginTop: '8px',
-                borderRadius: '8px',
-                border: '1px solid #ccc',
+                padding: '12px 14px',
+                borderRadius: '10px',
+                border: '1px solid #cbd5e1',
                 outline: 'none',
+                fontSize: '0.925rem',
+                backgroundColor: '#ffffff',
+                boxSizing: 'border-box',
+                transition: 'border-color 0.2s',
               }}
             />
           </div>
 
           {/* PASSWORD */}
           <div style={{ marginBottom: '20px' }}>
-            <label>Password</label>
-
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+              Password
+            </label>
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                border: '1px solid #ccc',
-                borderRadius: '8px',
-                marginTop: '8px',
+                border: '1px solid #cbd5e1',
+                borderRadius: '10px',
+                backgroundColor: '#ffffff',
                 paddingRight: '10px',
+                boxSizing: 'border-box',
               }}
             >
               <input
@@ -118,9 +145,12 @@ function Login() {
                 required
                 style={{
                   width: '100%',
-                  padding: '12px',
+                  padding: '12px 14px',
                   border: 'none',
                   outline: 'none',
+                  fontSize: '0.925rem',
+                  backgroundColor: 'transparent',
+                  boxSizing: 'border-box',
                 }}
               />
 
@@ -131,15 +161,20 @@ function Login() {
                   border: 'none',
                   background: 'none',
                   cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  color: '#2563eb',
+                  padding: '6px',
                 }}
               >
                 {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
           </div>
+
           {/* ERROR MESSAGE */}
           {error && (
-            <div style={{ marginBottom: '15px', padding: '10px', background: '#fee2e2', color: '#dc2626', borderRadius: '8px', fontSize: '14px', textAlign: 'center' }}>
+            <div style={{ marginBottom: '16px', padding: '10px', background: '#fee2e2', color: '#dc2626', borderRadius: '8px', fontSize: '14px', textAlign: 'center' }}>
               {error}
             </div>
           )}
@@ -150,16 +185,18 @@ function Login() {
             style={{
               width: '100%',
               padding: '12px',
-              background: '#007bff',
+              background: '#2563eb',
               color: '#fff',
               border: 'none',
-              borderRadius: '8px',
+              borderRadius: '10px',
               cursor: 'pointer',
-              fontSize: '16px',
-              fontWeight: 'bold',
+              fontSize: '0.95rem',
+              fontWeight: 600,
+              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+              transition: 'background-color 0.2s',
             }}
           >
-            Login
+            Sign in
           </button>
 
         </form>

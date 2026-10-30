@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, ExternalLink, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { Eye, ExternalLink, Pencil, Plus, RefreshCw, Search, Trash2, X, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import Button from '../components/Button';
 import ExcelImportControls from '../components/ExcelImportControls';
-import TablePagination from '../components/TablePagination';
 import TableFilters from '../components/TableFilters';
 import useTableFilters from '../hooks/useTableFilters';
 import useTablePagination from '../hooks/useTablePagination';
+import CategoryDropdown from '../components/CategoryDropdown';
+import '../styles/whatsapp.css';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
@@ -27,6 +28,24 @@ const formatDateTime = (value) => {
   if (!value) return '-';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '-' : DATE_TIME_FORMATTER.format(date);
+};
+
+const AVATAR_PALETTES = [
+  { bg: '#dbeafe', color: '#1d4ed8' },
+  { bg: '#ffe4e6', color: '#e11d48' },
+  { bg: '#dcfce7', color: '#15803d' },
+  { bg: '#f3e8ff', color: '#7e22ce' },
+  { bg: '#cffafe', color: '#0e7490' },
+  { bg: '#ffedd5', color: '#c2410c' },
+];
+
+const getAvatarStyle = (index = 0) => AVATAR_PALETTES[index % AVATAR_PALETTES.length];
+
+const getInitials = (name) => {
+  if (!name || name === '-') return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return parts[0].slice(0, 1).toUpperCase();
 };
 
 const EMAIL_STATUS_OPTIONS = ['not sent', 'new', 'sent', 'failed'];
@@ -142,6 +161,18 @@ const Company = () => {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // ── Create ────────────────────────────────────────────────────
   const submitCompany = async (event) => {
@@ -311,7 +342,15 @@ const Company = () => {
               <span style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 400 }}>(optional)</span>
             )}
           </label>
-          {field.selectOptions ? (
+          {field.name === 'source' ? (
+            <CategoryDropdown
+              id={`${idPrefix}-${field.name}`}
+              name={field.name}
+              value={form[field.name]}
+              onChange={(e) => setForm({ ...form, [field.name]: e.target.value })}
+              placeholder={field.placeholder || 'Select category (e.g. IT, Recruitment...)'}
+            />
+          ) : field.selectOptions ? (
             <select
               id={`${idPrefix}-${field.name}`}
               value={form[field.name]}
@@ -543,8 +582,6 @@ const Company = () => {
     </div>
   );
 
-  const COLS = 7; // total <th> count
-
   const companyTableFilters = useTableFilters(companies, {
     facets: COMPANY_FILTERS,
     dateField: 'created_at',
@@ -568,17 +605,73 @@ const Company = () => {
   }, [companyTableFilters.filteredItems, searchTerm]);
   const companyPagination = useTablePagination(filteredCompanies);
 
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-6" style={{ flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 className="page-title">Company</h1>
-          <p className="page-subtitle">Manage company contacts, email campaigns and engagement metrics</p>
+  const renderTableFooter = (pagination, totalCount) => (
+    <div className="wa-table-footer">
+      <div className="wa-footer-left">
+        Showing {totalCount === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1} to {Math.min(pagination.page * pagination.pageSize, totalCount)} of {totalCount} results
+      </div>
+      <div className="wa-footer-right">
+        <button
+          type="button"
+          className="wa-pg-nav-btn"
+          onClick={() => pagination.setPage(Math.max(1, pagination.page - 1))}
+          disabled={pagination.page <= 1}
+          aria-label="Previous page"
+        >
+          <ChevronLeft size={16} />
+        </button>
+        {Array.from({ length: pagination.pageCount }, (_, i) => i + 1).map((p) => (
+          <button
+            key={p}
+            type="button"
+            className={`wa-pg-num-btn ${p === pagination.page ? 'wa-pg-num-active' : ''}`}
+            onClick={() => pagination.setPage(p)}
+          >
+            {p}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="wa-pg-nav-btn"
+          onClick={() => pagination.setPage(Math.min(pagination.pageCount, pagination.page + 1))}
+          disabled={pagination.page >= pagination.pageCount}
+          aria-label="Next page"
+        >
+          <ChevronRight size={16} />
+        </button>
+        <span className="wa-rows-label">Rows per page</span>
+        <div className="wa-rows-select-wrap">
+          <select
+            aria-label="Rows per page"
+            value={pagination.pageSize}
+            onChange={(e) => pagination.setPageSize(Number(e.target.value))}
+          >
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+          <ChevronDown size={14} className="wa-rows-arrow" />
         </div>
-        <div className="flex gap-2">
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="wa-dashboard">
+      {/* 1. Header */}
+      <header className="wa-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+        <div>
+          <h1 className="wa-header-title">Company</h1>
+          <p style={{ color: '#64748b', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+            Manage company contacts, email campaigns and engagement metrics
+          </p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => companiesQuery.refetch()} disabled={companiesQuery.isFetching}>
             Refresh
           </Button>
+
           <ExcelImportControls
             entity="company"
             users={users}
@@ -598,7 +691,7 @@ const Company = () => {
             Add Company
           </Button>
         </div>
-      </div>
+      </header>
 
       {notice && (
         <div className="dashboard-section" role="status" style={{ marginBottom: '1rem' }}>
@@ -611,66 +704,55 @@ const Company = () => {
         </div>
       )}
 
-      <div className="dashboard-section">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
-          <div>
-            <h2 className="section-title" style={{ margin: 0 }}>Company Directory</h2>
-            <p style={{ fontSize: '0.8125rem', color: '#64748b', margin: '0.25rem 0 0' }}>
-              Showing {filteredCompanies.length} of {companies.length} companies
-            </p>
-          </div>
+      {/* 2. Filter Card (Rounded soft white card) */}
+      <div
+        style={{
+          backgroundColor: '#ffffff',
+          borderRadius: '16px',
+          border: '1px solid rgba(220, 234, 250, 0.95)',
+          boxShadow: '0 4px 18px rgba(180, 205, 235, 0.16)',
+          padding: '1.15rem 1.35rem',
+          marginBottom: '1.5rem',
+        }}
+      >
+        <TableFilters
+          {...companyTableFilters}
+          showSearch={false}
+          hasFilters={companyTableFilters.hasFilters || Boolean(searchTerm)}
+          clearFilters={() => {
+            companyTableFilters.clearFilters();
+            setSearchTerm('');
+          }}
+        />
+      </div>
 
-          {/* Search Input Bar */}
-          <div style={{ position: 'relative', width: '100%', maxWidth: '360px' }}>
-            <Search
-              size={16}
-              style={{
-                position: 'absolute',
-                left: '0.85rem',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: '#94a3b8',
-                pointerEvents: 'none',
-              }}
-            />
+      {/* 3. Toolbar: Directory info on left, Capsule Search on right */}
+      <div className="wa-table-toolbar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Company Directory</h2>
+          <span className="wa-pill-badge" style={{ padding: '0.2rem 0.65rem' }}>
+            {filteredCompanies.length}
+          </span>
+        </div>
+
+        <div className="wa-toolbar-actions">
+          <div className="wa-capsule-search">
+            <Search size={15} color="#94a3b8" />
             <input
+              ref={searchInputRef}
               type="text"
+              placeholder="Search companies by name, email, phone..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 companyPagination.setPage(1);
               }}
-              placeholder="Search companies by name, email, phone..."
-              style={{
-                width: '100%',
-                padding: '0.55rem 2.2rem 0.55rem 2.4rem',
-                borderRadius: '8px',
-                border: '1.5px solid #cbd5e1',
-                fontSize: '0.875rem',
-                outline: 'none',
-                backgroundColor: '#ffffff',
-                color: '#0f172a',
-                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
-                transition: 'border-color 0.15s, box-shadow 0.15s',
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = '#0076FF';
-                e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0, 118, 255, 0.12)';
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = '#cbd5e1';
-                e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.04)';
-              }}
             />
-            {searchTerm && (
+            {searchTerm ? (
               <button
                 type="button"
                 onClick={() => setSearchTerm('')}
                 style={{
-                  position: 'absolute',
-                  right: '0.6rem',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
                   background: 'none',
                   border: 'none',
                   padding: '2px',
@@ -681,90 +763,150 @@ const Company = () => {
                 }}
                 title="Clear search"
               >
-                <X size={15} />
+                <X size={13} />
               </button>
+            ) : (
+              <span className="wa-kbd-shortcut">Ctrl K</span>
             )}
           </div>
         </div>
-        <TableFilters
-          {...companyTableFilters}
-          showSearch={false}
-          hasFilters={companyTableFilters.hasFilters || Boolean(searchTerm)}
-          clearFilters={() => {
-            companyTableFilters.clearFilters();
-            setSearchTerm('');
-          }}
-        />
+      </div>
 
-        <div className="table-container">
-          <table>
+      {/* 4. Floating Card Table Layout */}
+      <div className="wa-table-container-wrapper" style={{ minWidth: 0 }}>
+        <div className="wa-cards-table-container">
+          <table className="wa-cards-table">
             <thead>
               <tr>
-                <th>Company Name</th>
-                <th>Full Name</th>
-                <th>Phone</th>
-                <th>Email</th>
-                <th>Assigned User</th>
-                <th>Added</th>
-                <th style={{ textAlign: 'center' }}>Actions</th>
+                <th style={{ width: '19%' }}>
+                  <span className="wa-th-content">Company Name <span className="wa-sort-arrows">↑↓</span></span>
+                </th>
+                <th style={{ width: '17%' }}>
+                  <span className="wa-th-content">Full Name <span className="wa-sort-arrows">↑↓</span></span>
+                </th>
+                <th style={{ width: '13%' }}>
+                  <span className="wa-th-content">Phone <span className="wa-sort-arrows">↑↓</span></span>
+                </th>
+                <th style={{ width: '21%' }}>
+                  <span className="wa-th-content">Email <span className="wa-sort-arrows">↑↓</span></span>
+                </th>
+                <th style={{ width: '10%' }}>
+                  <span className="wa-th-content">Assigned User <span className="wa-sort-arrows">↑↓</span></span>
+                </th>
+                <th style={{ width: '10%' }}>
+                  <span className="wa-th-content">Added <span className="wa-sort-arrows">↑↓</span></span>
+                </th>
+                <th style={{ width: '12%', minWidth: '115px', textAlign: 'center', paddingRight: '0.75rem' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={COLS} style={{ textAlign: 'center', padding: '2rem' }}>Loading companies...</td></tr>
-              ) : error || companiesQuery.error || usersQuery.error ? (
-                <tr><td colSpan={COLS} role="alert" style={{ textAlign: 'center', padding: '2rem', color: '#b91c1c' }}>
-                  {error || companiesQuery.error?.message || usersQuery.error?.message}
-                </td></tr>
-              ) : filteredCompanies.length ? companyPagination.pageItems.map((item) => (
-                <tr key={item.id}>
-                  <td style={{ fontWeight: 600 }}>{item.company_name || '-'}</td>
-                  <td>{item.full_name || '-'}</td>
-                  <td>{item.phone_number || '-'}</td>
-                  <td>{item.email || '-'}</td>
-                  <td>{item.owner?.employee_name || '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(item.created_at)}</td>
-                  <td>
-                    <div className="flex gap-2" style={{ justifyContent: 'center' }}>
-                      <button
-                        type="button"
-                        title="View full details"
-                        onClick={() => openViewModal(item)}
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          color: '#2563eb', padding: '4px',
-                        }}
-                      >
-                        <Eye size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        title="Edit company"
-                        onClick={() => openEditModal(item)}
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          color: '#0076FF', padding: '4px',
-                        }}
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        type="button"
-                        title="Delete company"
-                        onClick={() => openDeleteModal(item)}
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          color: '#dc2626', padding: '4px',
-                        }}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#94a3b8', background: '#ffffff', borderRadius: '12px' }}>
+                    Loading companies...
                   </td>
                 </tr>
-              )) : (
+              ) : error || companiesQuery.error || usersQuery.error ? (
                 <tr>
-                  <td colSpan={COLS} style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>
+                  <td colSpan={7} role="alert" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#b91c1c', background: '#ffffff', borderRadius: '12px' }}>
+                    {error || companiesQuery.error?.message || usersQuery.error?.message}
+                  </td>
+                </tr>
+              ) : filteredCompanies.length ? companyPagination.pageItems.map((item, index) => {
+                const avatar = getAvatarStyle(index);
+                const initials = getInitials(item.full_name || item.company_name);
+                return (
+                  <tr key={item.id}>
+                    <td style={{ fontWeight: 600, color: '#0f172a' }}>{item.company_name || '-'}</td>
+                    <td>
+                      <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                        {item.full_name || '-'}
+                      </span>
+                    </td>
+                    <td style={{ color: '#475569' }}>{item.phone_number || '-'}</td>
+                    <td style={{ color: '#334155' }}>{item.email || '-'}</td>
+                    <td>
+                      {item.owner?.employee_name ? (
+                        <span style={{ color: '#2563eb', fontWeight: 600 }}>
+                          {item.owner.employee_name}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#94a3b8' }}>-</span>
+                      )}
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap', color: '#64748b' }}>{formatDateTime(item.created_at)}</td>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap', paddingRight: '0.75rem', overflow: 'visible' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center' }}>
+                        <button
+                          type="button"
+                          title="View full details"
+                          onClick={() => openViewModal(item)}
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            flexShrink: 0,
+                            borderRadius: '7px',
+                            border: '1px solid #cbd5e1',
+                            backgroundColor: '#ffffff',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#2563eb',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <Eye size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Edit company"
+                          onClick={() => openEditModal(item)}
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            flexShrink: 0,
+                            borderRadius: '7px',
+                            border: '1px solid #cbd5e1',
+                            backgroundColor: '#ffffff',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#0284c7',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete company"
+                          onClick={() => openDeleteModal(item)}
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            flexShrink: 0,
+                            borderRadius: '7px',
+                            border: '1px solid #fecaca',
+                            backgroundColor: '#ffffff',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#ef4444',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#64748b', background: '#ffffff', borderRadius: '12px' }}>
                     {searchTerm || companyTableFilters.hasFilters ? (
                       <div>
                         <p style={{ margin: 0, fontWeight: 500 }}>No companies match the selected filters.</p>
@@ -775,7 +917,7 @@ const Company = () => {
                             marginTop: '0.5rem',
                             background: 'none',
                             border: 'none',
-                            color: '#0076FF',
+                            color: '#2563eb',
                             cursor: 'pointer',
                             fontSize: '0.85rem',
                             textDecoration: 'underline',
@@ -793,7 +935,7 @@ const Company = () => {
             </tbody>
           </table>
         </div>
-        <TablePagination {...companyPagination} />
+        {renderTableFooter(companyPagination, filteredCompanies.length)}
       </div>
 
       {/* Add Modal */}
@@ -820,15 +962,15 @@ const Company = () => {
           position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem',
         }}>
-          <div className="dashboard-section" style={{ maxWidth: 440, width: '100%', margin: 0 }}>
-            <h2 className="section-title">Delete Company Contact</h2>
-            <p style={{ marginBottom: '1rem' }}>
+          <div className="dashboard-section" style={{ maxWidth: 440, width: '100%', margin: 0, backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', border: '1px solid #e2e8f0', padding: '1.5rem' }}>
+            <h2 className="section-title" style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.75rem' }}>Delete Company Contact</h2>
+            <p style={{ marginBottom: '1rem', color: '#475569', fontSize: '0.875rem' }}>
               Are you sure you want to delete{' '}
               <strong>{selectedCompany?.company_name || selectedCompany?.full_name || selectedCompany?.email || 'this company'}</strong>?
               This action cannot be undone.
             </p>
             {error && <p role="alert" style={{ color: '#b91c1c', marginBottom: '1rem' }}>{error}</p>}
-            <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
+            <div className="flex gap-2" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
               <Button
                 type="button"
                 variant="secondary"
@@ -837,6 +979,7 @@ const Company = () => {
               >
                 Cancel
               </Button>
+    
               <Button
                 type="button"
                 variant="primary"
@@ -1133,6 +1276,7 @@ const Company = () => {
               >
                 Close
               </Button>
+    
               <Button
                 type="button"
                 variant="primary"

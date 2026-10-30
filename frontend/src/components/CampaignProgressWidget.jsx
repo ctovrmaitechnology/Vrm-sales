@@ -15,6 +15,9 @@ export default function CampaignProgressWidget({
     queued: 0,
     progress: 0,
     currentContact: '',
+    isWaiting: false,
+    waitingRemainingSeconds: 0,
+    waitMessage: '',
     startedAt: null,
     completedAt: null,
   });
@@ -191,7 +194,7 @@ export default function CampaignProgressWidget({
               {isEmail ? 'Email Campaign' : 'WhatsApp Campaign'}
             </span>
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #64748b)' }}>
-              {data.running ? 'In Progress' : 'Completed'}
+              {data.running ? (data.isWaiting ? 'Waiting between messages (2m delay)' : 'In Progress') : 'Completed'}
             </span>
           </div>
         </div>
@@ -245,27 +248,33 @@ export default function CampaignProgressWidget({
 
           <button
             type="button"
-            onClick={() => setMinimized(!minimized)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMinimized(!minimized);
+            }}
             style={{
-              background: 'transparent',
+              background: 'none',
               border: 'none',
               padding: '3px',
               cursor: 'pointer',
-              color: 'var(--text-muted, #64748b)',
+              color: 'var(--text-muted, #94a3b8)',
               display: 'inline-flex',
               alignItems: 'center',
               borderRadius: '4px',
             }}
             title={minimized ? 'Expand' : 'Minimize'}
           >
-            {minimized ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            {minimized ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
 
           <button
             type="button"
-            onClick={() => setDismissed(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setDismissed(true);
+            }}
             style={{
-              background: 'transparent',
+              background: 'none',
               border: 'none',
               padding: '3px',
               cursor: 'pointer',
@@ -288,7 +297,7 @@ export default function CampaignProgressWidget({
           <div style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '0.75rem' }}>
               <span style={{ fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>
-                {data.running ? 'Sending in progress...' : 'Finished'}
+                {data.running ? (data.isWaiting ? 'Waiting 2 minutes...' : 'Sending in progress...') : 'Finished'}
               </span>
               <span style={{ fontWeight: 700, color: themeColor }}>
                 {data.progress}% ({data.sent + data.failed}/{data.total})
@@ -417,9 +426,15 @@ export default function CampaignProgressWidget({
           >
             {data.running ? (
               <>
-                <Loader2 size={12} className="widget-spin" style={{ color: themeColor, flexShrink: 0 }} />
+                {data.isWaiting ? (
+                  <Clock size={12} style={{ color: themeColor, flexShrink: 0 }} />
+                ) : (
+                  <Loader2 size={12} className="widget-spin" style={{ color: themeColor, flexShrink: 0 }} />
+                )}
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {data.currentContact ? `Sending: ${data.currentContact}` : 'Processing queue...'}
+                  {data.isWaiting
+                    ? (data.waitMessage || data.currentContact)
+                    : (data.currentContact ? `Sending: ${data.currentContact}` : 'Processing queue...')}
                 </span>
               </>
             ) : (

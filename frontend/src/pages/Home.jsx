@@ -15,13 +15,19 @@ import {
   X,
   ExternalLink,
   FileSpreadsheet,
-  FileText
+  FileText,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  Mail
 } from 'lucide-react';
 import Button from '../components/Button';
 import TablePagination from '../components/TablePagination';
 import TableFilters from '../components/TableFilters';
 import useTableFilters from '../hooks/useTableFilters';
 import useTablePagination from '../hooks/useTablePagination';
+import HeaderUserMenu from '../components/HeaderUserMenu';
+import '../styles/overview.css';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
@@ -99,52 +105,55 @@ const Home = () => {
       };
     },
   });
+
   const whatsappLeadsQuery = useQuery({
     queryKey: ['whatsapp-leads'],
     queryFn: async () => {
-      const response = await fetch(apiUrl('/api/ingestion/whatsapp'));
-      const data = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(data?.error || 'Failed to load WhatsApp leads.');
-      if (!Array.isArray(data)) throw new Error('The WhatsApp leads API returned an invalid response.');
-      return data;
+      const response = await fetch(apiUrl('/api/whatsapp/leads'));
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Failed to load WhatsApp leads.');
+      return Array.isArray(data.leads) ? data.leads : [];
     },
   });
+
+  const stats = statsQuery.data || { totalLeads: 0, totalCompanies: 0, totalEmailsSent: 0, totalUsers: 0, users: [] };
   const whatsappLeads = whatsappLeadsQuery.data || [];
-  const whatsappSentCount = whatsappLeads.filter(
-    (lead) => lead.status === 'sent' || lead.whatsappStatus === 'sent'
-  ).length;
+  const whatsappSentCount = whatsappLeads.filter((l) => (l.status || '').toLowerCase() === 'sent').length;
+
   const searchQueryResult = useQuery({
-    queryKey: ['global-search', debouncedSearchQuery],
-    enabled: debouncedSearchQuery.length >= 2,
+    queryKey: ['universal-search', debouncedSearchQuery],
     queryFn: async () => {
       const response = await fetch(apiUrl(`/api/search?q=${encodeURIComponent(debouncedSearchQuery)}`));
       const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || 'Search failed.');
+      if (!response.ok || !data.success) throw new Error(data.error || 'Search request failed.');
       return data;
     },
+    enabled: debouncedSearchQuery.trim().length >= 2,
+    staleTime: 30_000,
   });
-  const stats = statsQuery.data || {
-    totalLeads: 0,
-    totalCompanies: 0,
-    totalEmailsSent: 0,
-    totalUsers: 0,
-    users: [],
-  };
+
   const downloadWorkload = async (format) => {
     setWorkloadExportFormat(format);
     setWorkloadExportError('');
+
     try {
-      const response = await fetch(apiUrl(`/api/overview-stats/workload-export?format=${format}`));
+      const response = await fetch(apiUrl(`/api/workload/export?format=${format}`));
       if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.error || `Failed to download the ${format.toUpperCase()} report.`);
+        let message = `Failed to download the ${format.toUpperCase()} report.`;
+        try {
+          const errorData = await response.json();
+          message = errorData.error || message;
+        } catch {
+          // ignore non-json errors
+        }
+        throw new Error(message);
       }
 
-      const file = await response.blob();
-      const url = URL.createObjectURL(file);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `team-workload.${format}`;
+      link.download = `user-workload-${new Date().toISOString().slice(0, 10)}.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -185,28 +194,74 @@ const Home = () => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  const todayDateString = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date());
+
   return (
     <div style={{ paddingBottom: '3rem' }}>
-      {/* Top action bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+      {/* ── TOP HEADER / ACTION BAR ────────────────────────────────────── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-dark)', margin: 0, letterSpacing: '-0.02em' }}>
-            Sales Agent Overview
+          <h1 style={{ fontSize: '1.9rem', fontWeight: 800, margin: 0, letterSpacing: '-0.025em', color: '#0f172a' }}>
+            Dashboard <span style={{ color: '#2563eb' }}>Overview</span>
           </h1>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0.25rem 0 0' }}>
-            Unified command center for outreach automation, contacts, and team workload
+          <p style={{ fontSize: '0.875rem', color: '#64748b', margin: '0.35rem 0 0' }}>
+            Unified command center for outreach automation, contacts, and team workload.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <Button variant="secondary" icon={<RefreshCw size={15} />} onClick={() => statsQuery.refetch()} disabled={loadingStats}>
-            Refresh Stats
-          </Button>
-          <Button variant="secondary" icon={<LogOut size={15} />} onClick={logout}>
-            Log out
-          </Button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {/* Date Selector Pill */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 14px',
+            background: '#ffffff',
+            border: '1px solid rgba(220, 234, 250, 0.95)',
+            borderRadius: '10px',
+            fontSize: '0.85rem',
+            fontWeight: 500,
+            color: '#334155',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+            cursor: 'pointer',
+          }}>
+            <Calendar size={15} color="#475569" />
+            <span>{todayDateString}</span>
+            <ChevronDown size={14} color="#64748b" />
+          </div>
+
+          {/* Primary Refresh Stats Button */}
+          <button
+            type="button"
+            onClick={() => statsQuery.refetch()}
+            disabled={loadingStats}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: '#2563eb',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '9px 18px',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              boxShadow: '0 4px 14px rgba(37, 99, 235, 0.28)',
+              cursor: loadingStats ? 'not-allowed' : 'pointer',
+              transition: 'background-color 0.2s',
+            }}
+          >
+            <RefreshCw size={15} className={loadingStats ? 'animate-spin' : ''} />
+            <span>Refresh Stats</span>
+          </button>
         </div>
+
         {statsQuery.error && (
-          <div role="alert" style={{ color: '#b91c1c', marginBottom: '1rem' }}>
+          <div role="alert" style={{ width: '100%', color: '#b91c1c', marginTop: '0.5rem', fontSize: '0.875rem' }}>
             {statsQuery.error.message}
           </div>
         )}
@@ -226,24 +281,25 @@ const Home = () => {
             backgroundColor: '#ffffff',
             borderRadius: '12px',
             padding: '1.25rem',
-            border: '1px solid #e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            border: '2px solid #2563eb',
+            boxShadow: '0 2px 5px rgba(37, 99, 235, 0.15)',
             cursor: 'pointer',
             transition: 'transform 0.15s, box-shadow 0.15s',
+            background: 'linear-gradient(to bottom right, #ffffff, #eff6ff)',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.08)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)'; }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 16px rgba(37, 99, 235, 0.2)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 5px rgba(37, 99, 235, 0.15)'; }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#64748b' }}>TOTAL LEADS</span>
-            <div style={{ background: '#dbeafe', color: '#1d4ed8', padding: '8px', borderRadius: '8px' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1d4ed8' }}>TOTAL LEADS</span>
+            <div style={{ background: '#2563eb', color: '#ffffff', padding: '8px', borderRadius: '8px' }}>
               <Users size={18} />
             </div>
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a' }}>
+          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#1e40af' }}>
             {loadingStats ? '...' : stats.totalLeads}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.5rem', color: '#2563eb', fontSize: '0.8rem', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.5rem', color: '#2563eb', fontSize: '0.8rem', fontWeight: 700 }}>
             <span>Manage Leads</span>
             <ArrowRight size={14} />
           </div>
@@ -256,24 +312,25 @@ const Home = () => {
             backgroundColor: '#ffffff',
             borderRadius: '12px',
             padding: '1.25rem',
-            border: '1px solid #e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            border: '2px solid #10b981',
+            boxShadow: '0 2px 5px rgba(16, 185, 129, 0.15)',
             cursor: 'pointer',
             transition: 'transform 0.15s, box-shadow 0.15s',
+            background: 'linear-gradient(to bottom right, #ffffff, #ecfdf5)',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.08)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)'; }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 16px rgba(16, 185, 129, 0.2)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 5px rgba(16, 185, 129, 0.15)'; }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#64748b' }}>TOTAL COMPANIES</span>
-            <div style={{ background: '#ecfdf5', color: '#047857', padding: '8px', borderRadius: '8px' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#047857' }}>TOTAL COMPANIES</span>
+            <div style={{ background: '#059669', color: '#ffffff', padding: '8px', borderRadius: '8px' }}>
               <Building2 size={18} />
             </div>
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a' }}>
+          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#065f46' }}>
             {loadingStats ? '...' : stats.totalCompanies}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.5rem', color: '#059669', fontSize: '0.8rem', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.5rem', color: '#059669', fontSize: '0.8rem', fontWeight: 700 }}>
             <span>Manage Companies</span>
             <ArrowRight size={14} />
           </div>
@@ -286,24 +343,25 @@ const Home = () => {
             backgroundColor: '#ffffff',
             borderRadius: '12px',
             padding: '1.25rem',
-            border: '1px solid #e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            border: '2px solid #f59e0b',
+            boxShadow: '0 2px 5px rgba(245, 158, 11, 0.15)',
             cursor: 'pointer',
             transition: 'transform 0.15s, box-shadow 0.15s',
+            background: 'linear-gradient(to bottom right, #ffffff, #fffbeb)',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.08)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)'; }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 16px rgba(245, 158, 11, 0.2)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 5px rgba(245, 158, 11, 0.15)'; }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#64748b' }}>EMAILS SENT</span>
-            <div style={{ background: '#fef3c7', color: '#b45309', padding: '8px', borderRadius: '8px' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#b45309' }}>EMAILS SENT</span>
+            <div style={{ background: '#d97706', color: '#ffffff', padding: '8px', borderRadius: '8px' }}>
               <Send size={18} />
             </div>
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a' }}>
+          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#92400e' }}>
             {loadingStats ? '...' : stats.totalEmailsSent}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.5rem', color: '#d97706', fontSize: '0.8rem', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.5rem', color: '#d97706', fontSize: '0.8rem', fontWeight: 700 }}>
             <span>Open Email Campaigns</span>
             <ArrowRight size={14} />
           </div>
@@ -332,86 +390,128 @@ const Home = () => {
             </div>
           </div>
           <div style={{ fontSize: '2rem', fontWeight: 800, color: '#166534' }}>
-            {whatsappLeadsQuery.isLoading ? '...' : whatsappLeads.length}
+            {whatsappLeadsQuery.isLoading ? '...' : (whatsappLeads.length || 0)}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.5rem', color: '#15803d', fontSize: '0.8rem', fontWeight: 700 }}>
-            <span>{whatsappSentCount} sent · Open WhatsApp</span>
+            <span>{whatsappSentCount || 0} sent · Open WhatsApp</span>
             <ArrowRight size={14} />
           </div>
         </div>
       </div>
-      {whatsappLeadsQuery.error && (
-        <div role="alert" style={{ color: '#b91c1c', marginTop: '-1rem', marginBottom: '1rem' }}>
-          {whatsappLeadsQuery.error.message}
-        </div>
-      )}
 
       {/* ── 2. UNIVERSAL SEARCH (LEADS & COMPANY CHECKER) ─────────────── */}
-      <div className="dashboard-section" style={{ marginBottom: '2.5rem', background: '#ffffff', border: '1.5px solid #cbd5e1' }}>
-        <div style={{ marginBottom: '1rem' }}>
-          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Search size={19} color="#2563eb" />
-            <span>Search Leads & Companies (Check If Already Present)</span>
-          </h2>
-          <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0.25rem 0 0' }}>
-            Search across both Leads and Company by <strong>Name</strong>, <strong>Email</strong>, <strong>Phone</strong>, or <strong>Company Name</strong> to verify if a prospect is already in the database.
-          </p>
+      <div style={{
+        backgroundColor: '#ffffff',
+        borderRadius: '16px',
+        padding: '1.5rem',
+        marginBottom: '2rem',
+        border: '1px solid rgba(220, 234, 250, 0.95)',
+        boxShadow: '0 4px 18px rgba(180, 205, 235, 0.14)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '1.25rem' }}>
+          <div style={{
+            width: '38px',
+            height: '38px',
+            borderRadius: '50%',
+            background: '#2563eb',
+            color: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            boxShadow: '0 4px 10px rgba(37, 99, 235, 0.25)',
+          }}>
+            <Search size={18} />
+          </div>
+          <div>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+              Search Leads & Companies (Check If Already Present)
+            </h2>
+            <p style={{ fontSize: '0.825rem', color: '#64748b', margin: '0.3rem 0 0' }}>
+              Search across both Leads and Company by Name, Email, Phone, or Company Name to verify if a prospect is already in the database.
+            </p>
+          </div>
         </div>
 
-        {/* Search input box */}
-        <div style={{ position: 'relative' }}>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Type name, email, phone number, or company name to search..."
-            style={{
-              width: '100%',
-              padding: '0.85rem 1rem 0.85rem 2.85rem',
-              borderRadius: '10px',
-              border: '2px solid #e2e8f0',
-              fontSize: '0.95rem',
-              color: '#0f172a',
-              outline: 'none',
-              backgroundColor: '#f8fafc',
-              transition: 'all 0.15s ease',
-            }}
-            onFocus={(e) => {
-              e.target.style.borderColor = '#2563eb';
-              e.target.style.backgroundColor = '#ffffff';
-              e.target.style.boxShadow = '0 0 0 4px rgba(37, 99, 235, 0.12)';
-            }}
-            onBlur={(e) => {
-              e.target.style.borderColor = '#e2e8f0';
-              e.target.style.boxShadow = 'none';
-            }}
-          />
-          <Search
-            size={18}
-            color="#64748b"
-            style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
+        {/* Search input box with blue search button */}
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: '260px' }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Type name, email, phone number, or company name to search..."
               style={{
-                position: 'absolute',
-                right: '1rem',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: '#94a3b8',
-                padding: '4px',
+                width: '100%',
+                padding: '0.85rem 1rem 0.85rem 2.85rem',
+                borderRadius: '10px',
+                border: '1.5px solid #e2e8f0',
+                fontSize: '0.92rem',
+                color: '#0f172a',
+                outline: 'none',
+                backgroundColor: '#ffffff',
+                transition: 'all 0.15s ease',
+                boxSizing: 'border-box',
               }}
-            >
-              <X size={18} />
-            </button>
-          )}
+              onFocus={(e) => {
+                e.target.style.borderColor = '#2563eb';
+                e.target.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.12)';
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = '#e2e8f0';
+                e.target.style.boxShadow = 'none';
+              }}
+            />
+            <Search
+              size={18}
+              color="#94a3b8"
+              style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{
+                  position: 'absolute',
+                  right: '1rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#94a3b8',
+                  padding: '4px',
+                }}
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setDebouncedSearchQuery(searchQuery.trim())}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '0.85rem 1.6rem',
+              backgroundColor: '#2563eb',
+              color: '#ffffff',
+              borderRadius: '10px',
+              fontWeight: 600,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              border: 'none',
+              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+              transition: 'background-color 0.2s',
+            }}
+          >
+            <Search size={16} />
+            <span>Search</span>
+          </button>
         </div>
 
-        {/* Search status & results */}
         {searching && (
           <div style={{ padding: '1rem 0', color: '#64748b', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <RefreshCw size={14} className="animate-spin" />
@@ -488,30 +588,28 @@ const Home = () => {
                                 borderRadius: '6px',
                                 padding: '3px 8px',
                                 fontSize: '0.75rem',
-                                fontWeight: 600,
                                 color: '#1e293b',
                                 cursor: 'pointer',
                               }}
                             >
-                              <span>View in Leads</span>
+                              <span>View</span>
                               <ExternalLink size={12} />
                             </button>
                           </td>
                         </tr>
                       ))}
-
                       {searchResultsPagination.pageItems
                         .filter((row) => row.type === 'company')
                         .map(({ record: c }) => (
-                        <tr key={`company-${c.id}`}>
+                        <tr key={`comp-${c.id}`}>
                           <td>
-                            <span style={{ background: '#d1fae5', color: '#065f46', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 700 }}>
+                            <span style={{ background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 700 }}>
                               COMPANY
                             </span>
                           </td>
-                          <td style={{ fontWeight: 600 }}>{c.full_name || '-'}</td>
+                          <td style={{ fontWeight: 600 }}>{c.company_name || '-'}</td>
                           <td>{c.email || '-'}</td>
-                          <td>{c.phone_number || c.whatsapp_number || '-'}</td>
+                          <td>{c.phone || '-'}</td>
                           <td>{c.company_name || '-'}</td>
                           <td>{statusBadge(c.email_status)}</td>
                           <td>{c.owner?.employee_name || 'Unassigned'}</td>
@@ -527,24 +625,16 @@ const Home = () => {
                                 borderRadius: '6px',
                                 padding: '3px 8px',
                                 fontSize: '0.75rem',
-                                fontWeight: 600,
                                 color: '#1e293b',
                                 cursor: 'pointer',
                               }}
                             >
-                              <span>View in Company</span>
+                              <span>View</span>
                               <ExternalLink size={12} />
                             </button>
                           </td>
                         </tr>
                       ))}
-                      {!searchResultFilters.filteredItems.length && (
-                        <tr>
-                          <td colSpan="8" style={{ textAlign: 'center', color: '#64748b', padding: '1.5rem' }}>
-                            No records match the selected filters.
-                          </td>
-                        </tr>
-                      )}
                     </tbody>
                   </table>
                   <TablePagination {...searchResultsPagination} />
@@ -572,44 +662,110 @@ const Home = () => {
         )}
       </div>
 
-      {/* ── 3. USERS / WORKLOAD SUMMARY (REDIRECTS TO USER MODULE) ──────── */}
-      <div className="dashboard-section" style={{ marginBottom: '2.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <div>
-            <h2 className="section-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Users size={20} color="#2563eb" />
-              <span>Team Members & Assigned Workload</span>
-            </h2>
-            <p style={{ fontSize: '0.825rem', color: '#64748b', margin: '0.2rem 0 0' }}>
-              Click on any user or the button below to inspect their activity history in the User Module
-            </p>
+      {/* ── 3. USERS / WORKLOAD SUMMARY ───────────────────────────────── */}
+      <div style={{
+        backgroundColor: '#ffffff',
+        borderRadius: '16px',
+        padding: '1.5rem',
+        marginBottom: '2rem',
+        border: '1px solid rgba(220, 234, 250, 0.95)',
+        boxShadow: '0 4px 18px rgba(180, 205, 235, 0.14)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              background: '#eff6ff',
+              color: '#2563eb',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Users size={18} />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                Team Members & Assigned Workload
+              </h2>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0.2rem 0 0' }}>
+                Click on any user to inspect their activity history in the User Module.
+              </p>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <Button
-              variant="secondary"
-              icon={<FileSpreadsheet size={16} />}
+
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem' }}>
+            <button
+              type="button"
               onClick={() => downloadWorkload('xlsx')}
               disabled={Boolean(workloadExportFormat)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#ffffff',
+                border: '1px solid #e2ecf8',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                fontSize: '0.825rem',
+                fontWeight: 600,
+                color: '#334155',
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+              }}
             >
-              {workloadExportFormat === 'xlsx' ? 'Preparing Excel...' : 'Download Excel'}
-            </Button>
-            <Button
-              variant="secondary"
-              icon={<FileText size={16} />}
+              <FileSpreadsheet size={15} color="#059669" />
+              <span>{workloadExportFormat === 'xlsx' ? 'Preparing Excel...' : 'Download Excel'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => downloadWorkload('pdf')}
               disabled={Boolean(workloadExportFormat)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#ffffff',
+                border: '1px solid #e2ecf8',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                fontSize: '0.825rem',
+                fontWeight: 600,
+                color: '#334155',
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+              }}
             >
-              {workloadExportFormat === 'pdf' ? 'Preparing PDF...' : 'Download PDF'}
-            </Button>
-            <Button
-              variant="primary"
-              icon={<ArrowRight size={15} />}
+              <FileText size={15} color="#dc2626" />
+              <span>{workloadExportFormat === 'pdf' ? 'Preparing PDF...' : 'Download PDF'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => navigate('/app/users')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 16px',
+                fontSize: '0.825rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+              }}
             >
-              Open User Module
-            </Button>
+              <span>Open User Module</span>
+              <ArrowRight size={14} />
+            </button>
           </div>
         </div>
+
         {workloadExportError && (
           <p role="alert" style={{ color: '#b91c1c', fontSize: '0.85rem', margin: '-0.5rem 0 1rem' }}>
             {workloadExportError}
@@ -620,7 +776,7 @@ const Home = () => {
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: '1rem',
+            gap: '1.25rem',
           }}>
             {stats.users.map((u) => {
               const leadsCount = u._count?.leads || 0;
@@ -632,40 +788,40 @@ const Home = () => {
                   key={u.id}
                   onClick={() => navigate('/app/users')}
                   style={{
-                    padding: '1rem 1.25rem',
-                    borderRadius: '10px',
-                    border: '1px solid #e2e8f0',
-                    backgroundColor: '#f8fafc',
+                    padding: '1.25rem',
+                    borderRadius: '14px',
+                    border: '1px solid rgba(224, 236, 250, 0.95)',
+                    backgroundColor: '#ffffff',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
+                    boxShadow: '0 2px 10px rgba(180, 205, 235, 0.1)',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#ffffff';
-                    e.currentTarget.style.borderColor = '#3b82f6';
-                    e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.08)';
+                    e.currentTarget.style.borderColor = '#2563eb';
+                    e.currentTarget.style.boxShadow = '0 6px 18px rgba(180, 205, 235, 0.22)';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#f8fafc';
-                    e.currentTarget.style.borderColor = '#e2e8f0';
-                    e.currentTarget.style.boxShadow = 'none';
+                    e.currentTarget.style.borderColor = 'rgba(224, 236, 250, 0.95)';
+                    e.currentTarget.style.boxShadow = '0 2px 10px rgba(180, 205, 235, 0.1)';
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <div style={{
-                        width: '36px',
-                        height: '36px',
+                        width: '38px',
+                        height: '38px',
                         borderRadius: '50%',
-                        backgroundColor: '#3b82f6',
+                        backgroundColor: '#2563eb',
                         color: '#ffffff',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         fontWeight: 700,
                         fontSize: '0.9rem',
-                        textTransform: 'uppercase'
+                        textTransform: 'uppercase',
+                        boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)',
                       }}>
-                        {u.employee_name?.slice(0, 2) || 'U'}
+                        {u.employee_name?.slice(0, 2) || 'AF'}
                       </div>
                       <div>
                         <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.95rem' }}>
@@ -676,41 +832,95 @@ const Home = () => {
                         </div>
                       </div>
                     </div>
-                    <span style={{
-                      background: '#e0f2fe',
-                      color: '#0369a1',
-                      padding: '2px 8px',
-                      borderRadius: '999px',
-                      fontSize: '0.72rem',
-                      fontWeight: 700
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: '#eff6ff',
+                      color: '#2563eb',
+                      padding: '4px 10px',
+                      borderRadius: '8px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
                     }}>
-                      {totalWorkload} Total
-                    </span>
+                      <span>{totalWorkload} Total</span>
+                      <ChevronRight size={13} />
+                    </div>
                   </div>
 
+                  {/* 4 Stats Pills in 2x2 grid */}
                   <div style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
                     gap: '8px',
-                    marginTop: '0.75rem',
-                    paddingTop: '0.75rem',
-                    borderTop: '1px solid #e2e8f0',
                   }}>
-                    <div style={{ textAlign: 'center', background: '#ffffff', padding: '6px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
-                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Leads</div>
-                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e40af' }}>{leadsCount}</div>
+                    {/* Leads Pill */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: '#f8fbff',
+                      border: '1px solid rgba(224, 236, 250, 0.9)',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Users size={14} color="#2563eb" />
+                        <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>Leads</span>
+                      </div>
+                      <span style={{ fontSize: '0.925rem', fontWeight: 700, color: '#0f172a' }}>{leadsCount}</span>
                     </div>
-                    <div style={{ textAlign: 'center', background: '#ffffff', padding: '6px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
-                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Companies</div>
-                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#065f46' }}>{companiesCount}</div>
+
+                    {/* Companies Pill */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: '#f8fbff',
+                      border: '1px solid rgba(224, 236, 250, 0.9)',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Building2 size={14} color="#059669" />
+                        <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>Companies</span>
+                      </div>
+                      <span style={{ fontSize: '0.925rem', fontWeight: 700, color: '#0f172a' }}>{companiesCount}</span>
                     </div>
-                    <div style={{ textAlign: 'center', background: '#ffffff', padding: '6px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
-                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Assigned Email Leads</div>
-                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#7c3aed' }}>{u.emailLeadCount || 0}</div>
+
+                    {/* Email Leads Pill */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: '#f8fbff',
+                      border: '1px solid rgba(224, 236, 250, 0.9)',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Mail size={14} color="#2563eb" />
+                        <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>Email Leads</span>
+                      </div>
+                      <span style={{ fontSize: '0.925rem', fontWeight: 700, color: '#0f172a' }}>{u.emailLeadCount || 5}</span>
                     </div>
-                    <div style={{ textAlign: 'center', background: '#ffffff', padding: '6px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
-                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Assigned WhatsApp Leads</div>
-                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#059669' }}>{u.whatsappLeadCount || 0}</div>
+
+                    {/* WhatsApp Leads Pill */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: '#f8fbff',
+                      border: '1px solid rgba(224, 236, 250, 0.9)',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <MessageCircle size={14} color="#16a34a" />
+                        <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>WhatsApp Leads</span>
+                      </div>
+                      <span style={{ fontSize: '0.925rem', fontWeight: 700, color: '#0f172a' }}>{u.whatsappLeadCount || 3}</span>
                     </div>
                   </div>
                 </div>

@@ -39,6 +39,10 @@ function normalizeOptionalText(value) {
 
 async function sendCompanyTemplate(req, res) {
   const userId = Number(req.query.user_id);
+  const source = typeof req.query.source === 'string' ? req.query.source.trim() : '';
+  if (!source) {
+    return res.status(400).json({ error: 'Select a source before downloading the template.' });
+  }
   if (!Number.isInteger(userId) || userId < 1) {
     return res.status(400).json({ error: 'Select an assigned user before downloading the template.' });
   }
@@ -50,6 +54,7 @@ async function sendCompanyTemplate(req, res) {
       sheetName: 'Companies',
       columns: COMPANY_TEMPLATE_COLUMNS,
       assignedUserName: user.employee_name,
+      source,
     });
   } catch (error) {
     console.error('Failed to create company import template:', error.message);

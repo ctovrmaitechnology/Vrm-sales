@@ -1,0 +1,147 @@
+/* ==========================================================================
+   OVERVIEW DASHBOARD & SOFT AURORA THEME
+   Inspired by Linear, Stripe & Vercel modern enterprise design
+   ========================================================================== */
+
+/* Overview Page Wrapper */
+.overview-page-wrapper {
+  padding-bottom: 3rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* Header Action Bar */
+.overview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.75rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.overview-title {
+  font-size: 1.9rem;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.025em;
+  color: #0f172a;
+}
+
+.overview-title-accent {
+  color: #2563eb;
+}
+
+.overview-subtitle {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0.35rem 0 0;
+}
+
+/* Date Pill Button */
+.overview-date-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 1px solid rgba(220, 234, 250, 0.95);
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #334155;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.overview-date-pill:hover {
+  background: #f8fbff;
+  border-color: #cbd5e1;
+}
+
+/* Primary Action Button */
+.overview-btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 18px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.overview-btn-primary:hover {
+  background-color: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
+}
+
+/* KPI Cards Grid */
+.overview-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.overview-kpi-card {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.25rem;
+  border: 1px solid rgba(220, 234, 250, 0.95);
+  box-shadow: 0 4px 18px rgba(180, 205, 235, 0.16);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.overview-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(180, 205, 235, 0.24);
+  border-color: rgba(190, 218, 250, 0.95);
+}
+
+/* Sparklines */
+.overview-sparkline {
+  width: 100%;
+  height: 32px;
+  overflow: visible;
+  margin: 8px 0 4px;
+}
+
+/* Section Cards */
+.overview-section-card {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  border: 1px solid rgba(220, 234, 250, 0.95);
+  box-shadow: 0 4px 18px rgba(180, 205, 235, 0.14);
+}
+
+/* Dark Theme Adaptations */
+[data-theme='dark'] .overview-title {
+  color: #f1f5f9;
+}
+
+[data-theme='dark'] .overview-date-pill {
+  background: #192338;
+  border-color: #26354f;
+  color: #94a3b8;
+}
+
+[data-theme='dark'] .overview-kpi-card,
+[data-theme='dark'] .overview-section-card {
+  background-color: #131b2e;
+  border-color: #1e293b;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35);
+}

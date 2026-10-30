@@ -1,7 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
-const { startWhatsAppCampaign, getWhatsAppCampaignStatus, recordWhatsAppWebhookResult } = require('../controllers/whatsappController');
+const {
+  startWhatsAppCampaign,
+  getWhatsAppCampaignStatus,
+  cancelWhatsAppCampaign,
+  recordWhatsAppWebhookResult
+} = require('../controllers/whatsappController');
 const { decodeLeadRef } = require('../services/trackingService');
 const { sendWhatsAppText, sendWhatsAppCtaUrl } = require('../services/whatsappService');
 const {
@@ -65,6 +70,7 @@ const apiLimiter = rateLimit({
 
 router.post('/send-campaign', apiLimiter, startWhatsAppCampaign);
 router.get('/send-campaign/status', getWhatsAppCampaignStatus);
+router.post('/send-campaign/cancel', cancelWhatsAppCampaign);
 
 router.get('/conversation/:phone', async (req, res) => {
   try {

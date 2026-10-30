@@ -4,9 +4,13 @@ import { Download, Upload, X } from 'lucide-react';
 const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
 
+const SOURCE_OPTIONS = ['Non-IT', 'IT', 'Recruitment', 'BPO'];
+
 const ExcelImportControls = ({ entity, users, onImported }) => {
+  const [source, setSource] = useState('');
   const [userId, setUserId] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -14,9 +18,53 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
   const [rowErrors, setRowErrors] = useState([]);
   const [reportOpen, setReportOpen] = useState(false);
   const [importedCount, setImportedCount] = useState(0);
+
   const endpoint = entity === 'lead' ? '/api/manual-leads' : '/api/companies';
-  const selectedUserId = userId || String(users[0]?.id || '');
-  const selectedUser = users.find((user) => String(user.id) === selectedUserId);
+  const selectedUser = users.find((user) => String(user.id) === String(userId));
+
+  const handleDownloadTemplate = async (event) => {
+    event?.preventDefault?.();
+    setError('');
+    setMessage('');
+
+    if (!source && !userId) {
+      setError('Please select both a Source and an Assigned User before downloading the template.');
+      return;
+    }
+    if (!source) {
+      setError('Please select a Source before downloading the template.');
+      return;
+    }
+    if (!userId) {
+      setError('Please select an Assigned User before downloading the template.');
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      const downloadUrl = apiUrl(
+        `${endpoint}/template?user_id=${encodeURIComponent(userId)}&source=${encodeURIComponent(source)}`
+      );
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || `Download failed with HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${entity === 'lead' ? 'leads' : 'companies'}_template.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (downloadErr) {
+      setError(downloadErr.message || 'Failed to download Excel template.');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const uploadFile = async (event) => {
     const input = event.currentTarget;
@@ -29,8 +77,8 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
       input.value = '';
       return;
     }
-    if (!selectedUserId) {
-      setError('Select an assigned user before uploading.');
+    if (!userId) {
+      setError('Please select an assigned user before uploading.');
       input.value = '';
       return;
     }
@@ -50,7 +98,7 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
     try {
       const body = new FormData();
       body.append('file', file);
-      body.append('user_id', selectedUserId);
+      body.append('user_id', userId);
       const response = await fetch(apiUrl(`${endpoint}/import`), { method: 'POST', body });
       const contentType = response.headers.get('content-type') || '';
       let result = null;
@@ -120,45 +168,126 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-      <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: '#475569' }}>
-        Assigned user
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+      {/* Source Dropdown */}
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.825rem', fontWeight: 600, color: '#334155' }}>
+        <span>Source:</span>
         <select
-          value={selectedUserId}
-          onChange={(event) => setUserId(event.target.value)}
-          aria-label="Assigned user for spreadsheet import"
-          style={{ minWidth: '150px', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+          value={source}
+          onChange={(event) => {
+            setSource(event.target.value);
+            if (error) setError('');
+          }}
+          aria-label="Select Source"
+          style={{
+            minWidth: '135px',
+            padding: '0.48rem 0.75rem',
+            border: '1.5px solid #cbd5e1',
+            borderRadius: '8px',
+            fontSize: '0.85rem',
+            color: source ? '#0f172a' : '#64748b',
+            backgroundColor: '#ffffff',
+            outline: 'none',
+            cursor: 'pointer',
+            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+            transition: 'border-color 0.15s, box-shadow 0.15s',
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = '#0076FF';
+            e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0, 118, 255, 0.12)';
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#cbd5e1';
+            e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.04)';
+          }}
         >
-          <option value="">Select user...</option>
+          <option value="">Select Source</option>
+          {SOURCE_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      </label>
+
+      {/* Assigned User Dropdown */}
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.825rem', fontWeight: 600, color: '#334155' }}>
+        <span>Assigned User:</span>
+        <select
+          value={userId}
+          onChange={(event) => {
+            setUserId(event.target.value);
+            if (error) setError('');
+          }}
+          aria-label="Select User"
+          style={{
+            minWidth: '145px',
+            padding: '0.48rem 0.75rem',
+            border: '1.5px solid #cbd5e1',
+            borderRadius: '8px',
+            fontSize: '0.85rem',
+            color: userId ? '#0f172a' : '#64748b',
+            backgroundColor: '#ffffff',
+            outline: 'none',
+            cursor: 'pointer',
+            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+            transition: 'border-color 0.15s, box-shadow 0.15s',
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = '#0076FF';
+            e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0, 118, 255, 0.12)';
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#cbd5e1';
+            e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.04)';
+          }}
+        >
+          <option value="">Select User</option>
           {users.map((user) => (
             <option key={user.id} value={user.id}>{user.employee_name}</option>
           ))}
         </select>
       </label>
-      <a
+
+      {/* Download Template Button */}
+      <button
+        type="button"
         className="btn btn-secondary"
-        href={selectedUser ? apiUrl(`${endpoint}/template?user_id=${encodeURIComponent(selectedUserId)}`) : undefined}
-        download
-        aria-disabled={!selectedUser}
-        onClick={(event) => {
-          if (!selectedUser) event.preventDefault();
+        onClick={handleDownloadTemplate}
+        disabled={downloading}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.45rem',
+          padding: '0.5rem 0.85rem',
+          borderRadius: '8px',
+          fontWeight: 500,
+          fontSize: '0.85rem',
+          cursor: downloading ? 'wait' : 'pointer',
+          whiteSpace: 'nowrap',
         }}
-        style={{ opacity: selectedUser ? 1 : 0.55, pointerEvents: selectedUser ? 'auto' : 'none' }}
       >
-        <span className="btn-icon"><Download size={16} /></span>
-        Download Template
-      </a>
+        <span className="btn-icon" style={{ display: 'inline-flex', alignItems: 'center' }}><Download size={16} /></span>
+        {downloading ? 'Downloading...' : 'Download Template'}
+      </button>
+
+      {/* Upload Excel Button */}
       <label
         className="btn btn-secondary"
-        aria-disabled={uploading || !selectedUser}
+        aria-disabled={uploading || !userId}
         style={{
           position: 'relative',
           overflow: 'hidden',
-          opacity: uploading || !selectedUser ? 0.55 : 1,
-          cursor: uploading || !selectedUser ? 'not-allowed' : 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.45rem',
+          padding: '0.5rem 0.85rem',
+          borderRadius: '8px',
+          fontSize: '0.85rem',
+          opacity: uploading || !userId ? 0.6 : 1,
+          cursor: uploading || !userId ? 'not-allowed' : 'pointer',
+          whiteSpace: 'nowrap',
         }}
       >
-        <span className="btn-icon"><Upload size={16} /></span>
+        <span className="btn-icon" style={{ display: 'inline-flex', alignItems: 'center' }}><Upload size={16} /></span>
         {uploading
           ? uploadProgress?.total
             ? `Uploading ${uploadProgress.processed}/${uploadProgress.total}`
@@ -168,7 +297,7 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
           type="file"
           accept=".xlsx,.xls,.csv"
           onChange={uploadFile}
-          disabled={uploading || !selectedUser}
+          disabled={uploading || !userId}
           aria-label="Choose Excel or CSV file to upload"
           style={{
             position: 'absolute',
@@ -176,10 +305,11 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
             width: '100%',
             height: '100%',
             opacity: 0,
-            cursor: uploading || !selectedUser ? 'not-allowed' : 'pointer',
+            cursor: uploading || !userId ? 'not-allowed' : 'pointer',
           }}
         />
       </label>
+
       {uploading && uploadProgress?.total > 0 && (
         <div
           role="status"
@@ -200,8 +330,9 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
           </div>
         </div>
       )}
+
       {(message || error) && (
-        <div role={error ? 'alert' : 'status'} style={{ width: '100%', color: error ? '#b91c1c' : '#166534', fontSize: '0.8rem' }}>
+        <div role={error ? 'alert' : 'status'} style={{ width: '100%', color: error ? '#b91c1c' : '#166534', fontSize: '0.8rem', marginTop: '0.2rem' }}>
           {error || message}
           {!error && (duplicates.length > 0 || rowErrors.length > 0) && (
             <button
@@ -214,6 +345,7 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
           )}
         </div>
       )}
+
       {reportOpen && (
         <div
           role="presentation"
