@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import '../styles/whatsapp.css';
 import {
   Download, Send, Loader2, RefreshCw, Search, X, CheckSquare,
@@ -35,21 +35,19 @@ const getInitials = (name) => {
   return parts[0].slice(0, 1).toUpperCase();
 };
 
-const EMAIL_LEAD_FILTER_CONFIG = {
+const getEmailLeadFilterConfig = (ownerOptions) => ({
   facets: [
-    { key: 'status', label: 'Status', field: (lead) => lead.email_status || lead.status },
     { key: 'source', label: 'Source', field: 'source' },
-    { key: 'owner', label: 'Assigned user', field: 'owner.employee_name' },
+    { key: 'owner', label: 'Assigned user', field: (lead) => lead.createdByName || lead.owner?.employee_name, options: ownerOptions },
   ],
-};
+});
 
-const EMAIL_COMPANY_FILTER_CONFIG = {
+const getEmailCompanyFilterConfig = (ownerOptions) => ({
   facets: [
-    { key: 'emailStatus', label: 'Email status', field: 'email_status' },
     { key: 'source', label: 'Source', field: 'source' },
-    { key: 'owner', label: 'Assigned user', field: 'owner.employee_name' },
+    { key: 'owner', label: 'Assigned user', field: 'owner.employee_name', options: ownerOptions },
   ],
-};
+});
 
 const SENT_EMAIL_FILTER_CONFIG = {
   facets: [
@@ -126,8 +124,24 @@ export default function Dashboard() {
     },
   });
 
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const response = await fetch(apiUrl('/api/users'));
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to load employees.');
+      if (!Array.isArray(data?.data)) throw new Error('The employees API returned an invalid response.');
+      return data.data;
+    },
+  });
+
   const leads = leadsQuery.data || EMPTY_LIST;
   const companies = companiesQuery.data || EMPTY_LIST;
+  const users = usersQuery.data || EMPTY_LIST;
+  const ownerOptions = useMemo(
+    () => [...new Set(users.map((user) => user.employee_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [users]
+  );
 
   const [uploadUserId, setUploadUserId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -173,8 +187,10 @@ export default function Dashboard() {
     ]);
   };
 
-  const leadTableFilters = useTableFilters(leads, EMAIL_LEAD_FILTER_CONFIG);
-  const companyTableFilters = useTableFilters(companies, EMAIL_COMPANY_FILTER_CONFIG);
+  const emailLeadFilterConfig = useMemo(() => getEmailLeadFilterConfig(ownerOptions), [ownerOptions]);
+  const emailCompanyFilterConfig = useMemo(() => getEmailCompanyFilterConfig(ownerOptions), [ownerOptions]);
+  const leadTableFilters = useTableFilters(leads, emailLeadFilterConfig);
+  const companyTableFilters = useTableFilters(companies, emailCompanyFilterConfig);
 
   const filteredLeads = leadTableFilters.filteredItems.filter((lead) => {
     const search = searchTerm.trim().toLowerCase();
@@ -995,14 +1011,17 @@ export default function Dashboard() {
                       }}
                     />
                   </th>
-                  <th style={{ width: '28%' }}>
+                  <th style={{ width: '22%' }}>
                     <span className="wa-th-content">Name <span className="wa-sort-arrows">↑↓</span></span>
                   </th>
-                  <th style={{ width: '12%' }}>
+                  <th style={{ width: '10%' }}>
                     <span className="wa-th-content">Type <span className="wa-sort-arrows">↑↓</span></span>
                   </th>
-                  <th style={{ width: '32%' }}>
+                  <th style={{ width: '26%' }}>
                     <span className="wa-th-content">Email <span className="wa-sort-arrows">↑↓</span></span>
+                  </th>
+                  <th style={{ width: '14%' }}>
+                    <span className="wa-th-content">Assigned User <span className="wa-sort-arrows">↑↓</span></span>
                   </th>
                   <th style={{ width: '14%', textAlign: 'center' }}>
                     <span className="wa-th-content" style={{ justifyContent: 'center' }}>Sent Status <span className="wa-sort-arrows">↑↓</span></span>
@@ -1042,6 +1061,9 @@ export default function Dashboard() {
                         <td style={{ color: '#334155' }}>
                           {lead.email || '-'}
                         </td>
+                        <td style={{ color: '#475569' }}>
+                          {lead.createdByName || lead.owner?.employee_name || '-'}
+                        </td>
                         <td style={{ textAlign: 'center' }}>
                           <span className="wa-status-pill wa-status-notsent">
                             <Clock size={12} /> Not Sent
@@ -1071,7 +1093,7 @@ export default function Dashboard() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan="6" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#94a3b8', background: '#ffffff', borderRadius: '12px' }}>
+                    <td colSpan="7" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#94a3b8', background: '#ffffff', borderRadius: '12px' }}>
                       No unsent leads found.
                     </td>
                   </tr>

@@ -1,5 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Mail, MessageSquare, Loader2, CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp, X } from 'lucide-react';
+﻿import React, { useState, useEffect, useRef } from 'react';
+import { Mail, MessageSquare, Loader2, CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp, X, Timer } from 'lucide-react';
+// Format seconds into human-readable time remaining
+function formatTimeRemaining(totalSeconds) {
+  if (!totalSeconds || totalSeconds <= 0) return null;
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return '~' + h + 'h ' + m + 'm remaining';
+  if (m > 0) return '~' + m + 'm ' + s + 's remaining';
+  return '~' + s + 's remaining';
+}
 
 export default function CampaignProgressWidget({
   type = 'email', // 'email' | 'whatsapp'
@@ -115,6 +125,19 @@ export default function CampaignProgressWidget({
   }
 
   const isCompleted = !data.running && Boolean(data.completedAt);
+
+  // Time remaining calculation:
+  // - waitingRemainingSeconds: live countdown for the current inter-email delay (from backend ticker)
+  // - queued: emails not yet sent; each will wait ~4 min (3-5 min random delay)
+  const queuedCount = data.queued || 0;
+  const currentWaitSec = data.waitingRemainingSeconds || 0;
+  // Total = current wait gap + future emails * 4 min avg
+  const estTotalSeconds = data.running
+    ? currentWaitSec + queuedCount * 240
+    : 0;
+  const estTimeRemainingLabel = data.running && (queuedCount > 0 || currentWaitSec > 0)
+    ? formatTimeRemaining(Math.max(estTotalSeconds, currentWaitSec))
+    : null;
 
   return (
     <div
@@ -324,6 +347,28 @@ export default function CampaignProgressWidget({
               />
             </div>
           </div>
+
+          {/* TIME REMAINING BANNER */}
+          {data.running && estTimeRemainingLabel && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '5px 10px',
+                borderRadius: '6px',
+                backgroundColor: '#f0f9ff',
+                border: '1px solid #bae6fd',
+                fontSize: '0.72rem',
+                color: '#0369a1',
+                fontWeight: 600,
+                marginBottom: '10px',
+              }}
+            >
+              <Timer size={12} style={{ flexShrink: 0 }} />
+              <span>Est. time remaining: {estTimeRemainingLabel}</span>
+            </div>
+          )}
 
           {/* METRIC CHIPS GRID */}
           <div

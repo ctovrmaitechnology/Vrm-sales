@@ -443,6 +443,15 @@ async function getEmailLeads(req, res) {
       getAllActiveLeads(),
       getCompanyEmailContacts()
     ]);
+    const ownerByEmail = new Map();
+    for (const lead of allLeads) {
+      if (!lead.email || (lead.user_id == null && !lead.createdByName)) continue;
+      const emailKey = lead.email.toLowerCase();
+      if (!ownerByEmail.has(emailKey)) {
+        ownerByEmail.set(emailKey, { user_id: lead.user_id, createdByName: lead.createdByName });
+      }
+    }
+
     const leadsByEmail = new Map();
     for (const lead of [...allLeads, ...companyContacts]) {
       if (!lead.email) continue;
@@ -452,7 +461,18 @@ async function getEmailLeads(req, res) {
         leadsByEmail.set(emailKey, lead);
       }
     }
-    res.json([...leadsByEmail.values()]);
+
+    const result = [...leadsByEmail.entries()].map(([emailKey, lead]) => {
+      const owner = ownerByEmail.get(emailKey);
+      if (!owner) return lead;
+      return {
+        ...lead,
+        user_id: lead.user_id ?? owner.user_id,
+        createdByName: lead.createdByName ?? owner.createdByName,
+      };
+    });
+
+    res.json(result);
   } catch (err) {
     console.error("Failed to fetch Email leads:", err.message);
     res.status(500).json({

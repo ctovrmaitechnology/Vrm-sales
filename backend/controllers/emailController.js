@@ -2,7 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = require('../prismaClient');
 const { isValidProduct, resolveProduct } = require('../productCampaigns');
 const { getCampaignLeads, updateUnifiedLeadStatus, updateEmailLeadStatus, updateUnifiedLeadEmailStatus, getEmailLeadsByEmails, recordEmailHistory } = require('../unifiedDb');
-const { sendInitialEmail } = require('../services/emailService');
+const { sendInitialEmail, setWaitProgressCallback, clearWaitProgressCallback } = require('../services/emailService');
 const { sendWhatsAppTemplate } = require('../services/whatsappService');
 const { detectIndustry, delay, isWhatsAppEnabled, logWhatsAppDisabled, normalizeLeadProduct } = require('../utils/helpers');
 const { runFollowUpEmailCheck } = require('../services/followUpService');
@@ -19,6 +19,9 @@ let emailCampaignProgress = {
   queued: 0,
   progress: 0,
   currentContact: '',
+  isWaiting: false,
+  waitingRemainingSeconds: 0,
+  waitMessage: '',
   startedAt: null,
   completedAt: null
 };
@@ -115,6 +118,9 @@ async function startCampaign(req, res) {
       queued: users.length,
       progress: 0,
       currentContact: users[0]?.email || '',
+      isWaiting: false,
+      waitingRemainingSeconds: 0,
+      waitMessage: '',
       startedAt: new Date(),
       completedAt: null
     };
@@ -125,6 +131,15 @@ async function startCampaign(req, res) {
     });
 
     (async () => {
+      // Register wait-progress callback so the queue delay ticks are reflected in status polls
+      setWaitProgressCallback(({ isWaiting, waitingRemainingSeconds, totalWaitSeconds }) => {
+        emailCampaignProgress.isWaiting = isWaiting;
+        emailCampaignProgress.waitingRemainingSeconds = waitingRemainingSeconds;
+        emailCampaignProgress.waitMessage = isWaiting
+          ? `Waiting ${Math.ceil(totalWaitSeconds / 60)}m before next email... (${waitingRemainingSeconds}s left)`
+          : '';
+      });
+
       try {
         let success = 0;
         let failed = 0;
@@ -252,12 +267,16 @@ async function startCampaign(req, res) {
       } catch (error) {
         console.error("Error in background campaign execution:", error.message);
       } finally {
+        clearWaitProgressCallback();
         emailCampaignRunning = false;
         emailCampaignProgress.running = false;
         emailCampaignProgress.queued = 0;
         emailCampaignProgress.progress = 100;
         emailCampaignProgress.completedAt = new Date();
         emailCampaignProgress.currentContact = '';
+        emailCampaignProgress.isWaiting = false;
+        emailCampaignProgress.waitingRemainingSeconds = 0;
+        emailCampaignProgress.waitMessage = '';
       }
     })();
 

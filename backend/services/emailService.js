@@ -5,19 +5,45 @@ const { getCampaign } = require('../productCampaigns');
 
 let emailSendQueue = Promise.resolve();
 
+// Optional global callback set by the campaign controller to track wait progress
+let _onWaitProgress = null;
+function setWaitProgressCallback(fn) { _onWaitProgress = fn; }
+function clearWaitProgressCallback() { _onWaitProgress = null; }
+
 function enqueueEmailSend(recipientEmail, sendFn) {
   const queuedSend = emailSendQueue.then(() => sendFn());
 
   emailSendQueue = queuedSend.then(async () => {
     const randomDelay = randomDelayMs(3, 5);
+    const totalSeconds = Math.round(randomDelay / 1000);
 
     console.log(
       `Shared email queue waiting ${Math.round(randomDelay / 60000)} minutes before next email...`
     );
 
-    await delay(randomDelay);
+    // Tick every second so the frontend can show a live countdown
+    let elapsed = 0;
+    const tickInterval = setInterval(() => {
+      elapsed += 1;
+      const remaining = Math.max(0, totalSeconds - elapsed);
+      if (_onWaitProgress) {
+        _onWaitProgress({ isWaiting: true, waitingRemainingSeconds: remaining, totalWaitSeconds: totalSeconds });
+      }
+    }, 1000);
+
+    try {
+      await delay(randomDelay);
+    } finally {
+      clearInterval(tickInterval);
+      if (_onWaitProgress) {
+        _onWaitProgress({ isWaiting: false, waitingRemainingSeconds: 0, totalWaitSeconds: 0 });
+      }
+    }
   }).catch(error => {
     console.log(`Shared email queue recovered after ${recipientEmail}: ${error.message}`);
+    if (_onWaitProgress) {
+      _onWaitProgress({ isWaiting: false, waitingRemainingSeconds: 0, totalWaitSeconds: 0 });
+    }
   });
 
   return queuedSend;
@@ -116,7 +142,7 @@ function renderEmailParagraphs(messageText, getTrackedHref, bookDemoHref) {
 async function executeBrevoApiNow(user, subject, messageText) {
   const firstName = getFirstName(user.name);
   const deliverabilityHeaders = buildDeliverabilityHeaders(user);
-  const hasGreeting = /^hi\b/i.test(String(messageText || '').trim());
+  const hasGreeting = /^(hi|dear)\b/i.test(String(messageText || '').trim());
 
   const htmlIntro = hasGreeting ? '' : `<p style="margin-bottom:16px;">Hi ${firstName},</p>`;
   const paragraphs = String(messageText || '').split('\n\n').map((p) => {
@@ -135,9 +161,9 @@ async function executeBrevoApiNow(user, subject, messageText) {
   `;
 
   const emailPayload = {
-    sender: { name: "Harini", email: "contactus@vrmaitechnology.com" },
+    sender: { name: "VRM Team", email: "contactus@vrmaitechnology.com" },
     to: [{ email: user.email, name: firstName }],
-    replyTo: { email: "contactus@vrmaitechnology.com", name: "Harini" },
+    replyTo: { email: "contactus@vrmaitechnology.com", name: "VRM Team" },
     subject,
     htmlContent: finalHtml,
     textContent: htmlToText(finalHtml),
@@ -171,11 +197,10 @@ async function executeBrevoApi(user, subject, messageText) {
 async function sendInitialEmail(user, product) {
   const campaign = getCampaign(product);
   if (campaign) {
-    const firstName = getFirstName(user.name);
     return executeBrevoApi(
       user,
       campaign.subject,
-      campaign.email.replace(/\[Name\]/g, firstName)
+      campaign.email
     );
   }
   const industry = detectIndustry(user.email);
@@ -288,5 +313,7 @@ module.exports = {
   sendInitialEmail,
   sendFollowUp1,
   sendFollowUp2,
-  sendFollowUp3
+  sendFollowUp3,
+  setWaitProgressCallback,
+  clearWaitProgressCallback
 };

@@ -10,6 +10,7 @@ const companyRoutes = require('./companyRoutes');
 const usersRoutes = require('./usersRoutes');
 const whatsappRoutes = require('./whatsappRoutes');
 const categoryRoutes = require('./categoryRoutes');
+const insightsRoutes = require('./insightsRoutes');
 
 router.use('/', emailRoutes);
 router.use('/', leadRoutes);
@@ -20,5 +21,6 @@ router.use('/', categoryRoutes);
 router.use('/companies', companyRoutes);
 router.use('/users', usersRoutes);
 router.use('/whatsapp', whatsappRoutes);
+router.use('/insights', insightsRoutes);
 
 module.exports = router;

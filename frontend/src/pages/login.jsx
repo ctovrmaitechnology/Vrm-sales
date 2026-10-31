@@ -18,6 +18,7 @@ function Login() {
     { email: 'maanusree@vrmaitechnology.com', password: 'password@vrm' },
     { email: 'harini@vrmaitechnology.com', password: 'password@vrm' },
     { email: 'admin@vrmaitechnology.com', password: 'vrm123' },
+    { email: 'srinesh@vrmaitechnology.com', password: 'vvv123' },
   ];
 
   const handleChange = (e) => {

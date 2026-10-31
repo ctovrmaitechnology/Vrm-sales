@@ -392,7 +392,9 @@ const WhatsApp = () => {
       Type: lead.isCompanyContact || lead.type === 'Company' ? 'Company' : 'Lead',
       'Assigned User': lead.createdByName || '',
       Phone: getPhone(lead) || '',
-      'Sent Status': hasFailedWhatsAppTemplate(lead) ? 'Failed' : hasSentWhatsAppTemplate(lead) ? 'Sent' : 'Not Sent',
+      'Sent Status': hasFailedWhatsAppTemplate(lead) && hasSentWhatsAppTemplate(lead)
+        ? 'Partially Failed'
+        : hasFailedWhatsAppTemplate(lead) ? 'Failed' : hasSentWhatsAppTemplate(lead) ? 'Sent' : 'Not Sent',
       'Delivery Status': getLeadFailureReason(lead) || ''
     }));
     if (dataToExport.length === 0) return;
@@ -438,22 +440,22 @@ const WhatsApp = () => {
                   }}
                 />
               </th>
-              <th style={{ width: '13%' }}>
+              <th style={{ width: '12%' }}>
                 <span className="wa-th-content">Name <span className="wa-sort-arrows">↑↓</span></span>
               </th>
               <th style={{ width: '5.5%' }}>
                 <span className="wa-th-content">Type <span className="wa-sort-arrows">↑↓</span></span>
               </th>
-              <th style={{ width: '10%' }}>
+              <th style={{ width: '9.5%' }}>
                 <span className="wa-th-content">Assigned User <span className="wa-sort-arrows">↑↓</span></span>
               </th>
-              <th style={{ width: '13%' }}>
+              <th style={{ width: '12.5%' }}>
                 <span className="wa-th-content">Phone Number <span className="wa-sort-arrows">↑↓</span></span>
               </th>
-              <th style={{ width: '8.5%' }}>
+              <th style={{ width: '11%' }}>
                 <span className="wa-th-content">Sent Status <span className="wa-sort-arrows">↑↓</span></span>
               </th>
-              <th style={{ width: '22%' }}>
+              <th style={{ width: '21%' }}>
                 <span className="wa-th-content">Template Delivery Status <span className="wa-sort-arrows">↑↓</span></span>
               </th>
               <th style={{ width: '7.5%', textAlign: 'center' }}>
@@ -558,8 +560,12 @@ const WhatsApp = () => {
                         )}
                       </div>
                     </td>
-                    <td>
-                      {isFailed ? (
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {isFailed && isSent ? (
+                        <span className="wa-status-pill wa-status-partial">
+                          <XCircle size={12} /> Partially Failed
+                        </span>
+                      ) : isFailed ? (
                         <span className="wa-status-pill wa-status-failed">
                           <XCircle size={12} /> Failed
                         </span>
@@ -615,7 +621,7 @@ const WhatsApp = () => {
                     <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <button
                         type="button"
-                        className="wa-btn-view"
+                        className={`wa-btn-view ${lead.read ? 'wa-btn-view-read' : ''}`}
                         onClick={() => {
                           setChatLead(lead);
                           setChatDraft('');
