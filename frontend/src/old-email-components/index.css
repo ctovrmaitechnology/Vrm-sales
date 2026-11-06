@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================
+   EMAIL MODULE ISOLATION
+   Reset global.css overrides inside #email-module
+   so the Tailwind-based email dashboard renders correctly.
+   ========================================== */
+
+#email-module {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-align: left;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  border: none;
+  line-height: 1.5;
+}
+
+/* Full button reset — remove all browser-default borders/outlines */
+#email-module button {
+  cursor: pointer;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#email-module button:focus,
+#email-module button:focus-visible {
+  outline: none !important;
+  box-shadow: none;
+}
+
+/* Override global.css h1/h2 styles (font-weight: 600, color: var(--text-dark)) */
+#email-module h1,
+#email-module h2,
+#email-module h3,
+#email-module h4,
+#email-module h5,
+#email-module h6 {
+  font-weight: inherit;
+  color: inherit;
+  font-size: inherit;
+  letter-spacing: normal;
+  margin: 0;
+}
+
+/* Override global.css table styles */
+#email-module th,
+#email-module td {
+  padding: inherit;
+  border-bottom: none;
+  background-color: transparent;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: inherit;
+  color: inherit;
+  font-size: inherit;
+}
+
+#email-module tr:hover td {
+  background-color: transparent;
+}
