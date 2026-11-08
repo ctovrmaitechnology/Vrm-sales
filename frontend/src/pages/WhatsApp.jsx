@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Send, Loader2, X, RefreshCw, CheckCheck, Search,
   CheckSquare, Filter, Download, ChevronDown, ChevronLeft, ChevronRight,
-  MoreVertical, Trash2, Copy, CheckCircle2, XCircle, Clock, ArrowUpDown, Check, MessageCircle, Calendar
+  MoreVertical, Trash2, Copy, CheckCircle2, XCircle, Clock, ArrowUpDown, Check, MessageCircle, Calendar, MousePointerClick
 } from 'lucide-react';
 import CampaignProgressWidget from '../components/CampaignProgressWidget';
 import TableFilters from '../components/TableFilters';
@@ -101,7 +101,7 @@ const hasSentWhatsAppTemplate = (lead) => {
   const statuses = getCurrentTemplateStatuses(lead);
   return statuses.length
     ? statuses.some((item) => isAcceptedWhatsAppStatus(item.status))
-    : lead.whatsappStatus === 'sent' || lead.status === 'sent';
+    : lead.whatsappStatus === 'sent' || lead.whatsappStatus === 'clicked' || lead.status === 'sent';
 };
 const hasFailedWhatsAppTemplate = (lead) => {
   const statuses = getCurrentTemplateStatuses(lead);
@@ -380,8 +380,7 @@ const WhatsApp = () => {
 
     if (!search) return true;
 
-    const isSent = lead.whatsappStatus === "sent" || lead.status === "sent";
-    const isFailed = lead.whatsappStatus === "failed" || lead.status === "failed";
+    const isSent = lead.whatsappStatus === "sent" || lead.whatsappStatus === "clicked" || lead.status === "sent"; const isFailed = lead.whatsappStatus === "failed" || lead.status === "failed";
     const notSentReason = isFailed ? (lead.failureReason || "Message undeliverable") : (!isSent ? "Not Sent" : "");
     const isRead = Boolean(lead.read);
 
@@ -402,11 +401,16 @@ const WhatsApp = () => {
   });
 
   const isSentLead = hasSentWhatsAppTemplate;
+  const isClickedLead = (lead) =>
+    Boolean(lead.clicked) ||
+    Number(lead.whatsappBookDemoClickCount) > 0 ||
+    Number(lead.whatsappVideoClickCount) > 0;
 
   // Mixed outcomes appear in both tabs so neither the successful nor failed template is hidden.
   const tabLeads = filteredLeads.filter((lead) => {
     if (activeTab === 'read') return isSentLead(lead) && Boolean(lead.read) && !lead.hasWhatsAppReply;
     if (activeTab === 'replied') return isSentLead(lead) && Boolean(lead.hasWhatsAppReply);
+    if (activeTab === 'clicked') return isClickedLead(lead);
     return activeTab === 'sent' ? isSentLead(lead) : hasUnsentWhatsAppTemplate(lead);
   });
   const tablePagination = useTablePagination(tabLeads);
@@ -416,6 +420,7 @@ const WhatsApp = () => {
     { key: 'sent', label: 'Sent' },
     { key: 'read', label: 'Read' },
     { key: 'replied', label: 'Replied' },
+    { key: 'clicked', label: 'Clicked' },
   ];
 
   const emptyMessages = {
@@ -423,18 +428,24 @@ const WhatsApp = () => {
     sent: 'No sent messages found.',
     read: 'No read messages found.',
     replied: 'No replies found.',
+    clicked: 'No clicked leads found.',
   };
 
   const notSentCount = useMemo(() => filteredLeads.filter(hasUnsentWhatsAppTemplate).length, [filteredLeads]);
   const sentCount = useMemo(() => filteredLeads.filter(hasSentWhatsAppTemplate).length, [filteredLeads]);
   const readCount = useMemo(() => filteredLeads.filter((lead) => isSentLead(lead) && Boolean(lead.read) && !lead.hasWhatsAppReply).length, [filteredLeads]);
+  const clickedCount = useMemo(() => filteredLeads.filter(isClickedLead).length, [filteredLeads]);
   const repliedCount = useMemo(() => filteredLeads.filter((lead) => isSentLead(lead) && Boolean(lead.hasWhatsAppReply)).length, [filteredLeads]);
 
   // This view is specifically about the reply-triggered auto-text message,
   // not the manually-sent 'followup_2' template — so only include leads who
   // either already received that reply message or have one scheduled.
   const followUpLeads = useMemo(
-    () => leads.filter((lead) => Boolean(lead.replyMessageStatus) || Boolean(lead.replyFollowUpDueAt)),
+    () => leads.filter((lead) =>
+      Boolean(lead.replyMessageStatus) ||
+      Boolean(lead.replyFollowUpDueAt) ||
+      Boolean(getFollowUpStatus(lead))
+    ),
     [leads]
   );
   const followUpScheduledCount = useMemo(
@@ -654,6 +665,9 @@ const WhatsApp = () => {
               <th style={{ width: '11%' }}>
                 <span className="wa-th-content">Sent Status <span className="wa-sort-arrows">↑↓</span></span>
               </th>
+              <th style={{ width: '12%', textAlign: 'center' }}>
+                <span className="wa-th-content" style={{ justifyContent: 'center' }}>Clicks</span>
+              </th>
               <th style={{ width: '21%' }}>
                 <span className="wa-th-content">Template Delivery Status <span className="wa-sort-arrows">↑↓</span></span>
               </th>
@@ -776,6 +790,35 @@ const WhatsApp = () => {
                         <span className="wa-status-pill wa-status-notsent">
                           <Clock size={12} /> Not Sent
                         </span>
+                      )}
+                    </td>
+
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {lead.whatsappBookDemoClickCount > 0 || lead.whatsappVideoClickCount > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                          {lead.whatsappBookDemoClickCount > 0 && (
+                            <span style={{ background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd', borderRadius: 999, padding: '2px 10px', fontSize: '0.76rem', fontWeight: 700 }}>
+                              Book Demo × {lead.whatsappBookDemoClickCount}
+                            </span>
+                          )}
+                          {lead.whatsappVideoClickCount > 0 && (
+                            <span style={{ background: '#cffafe', color: '#0e7490', border: '1px solid #67e8f9', borderRadius: 999, padding: '2px 10px', fontSize: '0.76rem', fontWeight: 700 }}>
+                              Demo Video × {lead.whatsappVideoClickCount}
+                            </span>
+                          )}
+                          {lead.clickedAt && (
+                            <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                              {new Date(lead.clickedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                          {lead.autoCallStatus && (
+                            <span style={{ fontSize: '0.68rem', color: '#7c3aed', fontWeight: 600 }}>AI call: {lead.autoCallStatus}</span>
+                          )}
+                        </div>
+                      ) : lead.clicked ? (
+                        <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', borderRadius: 999, padding: '2px 10px', fontSize: '0.76rem', fontWeight: 700 }}>Clicked ✓</span>
+                      ) : (
+                        <span style={{ color: '#cbd5e1' }}>—</span>
                       )}
                     </td>
                     <td>
@@ -916,7 +959,7 @@ const WhatsApp = () => {
               })
             ) : (
               <tr>
-                <td colSpan={10} style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#94a3b8', background: '#ffffff', borderRadius: '12px' }}>
+                <td colSpan={11} style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#94a3b8', background: '#ffffff', borderRadius: '12px' }}>
                   {emptyMessages[tableType]}
                 </td>
               </tr>
@@ -1058,7 +1101,7 @@ const WhatsApp = () => {
           } catch {
             failed++;
           }
-          if (i < phones.length - 1) await new Promise((resolve) => setTimeout(resolve, 2000));
+          if (i < phones.length - 1) await new Promise((resolve) => setTimeout(resolve, 120000));
         }
         setCampaignMessage(`Follow-up sent to ${sent} contact${sent === 1 ? '' : 's'}${failed ? `, ${failed} failed` : ''}.`);
         setSelectedContacts(new Set());
@@ -1363,6 +1406,18 @@ const WhatsApp = () => {
                 <span>Replied</span>
                 <span className="wa-pill-badge">{repliedCount}</span>
               </button>
+              <button
+                type="button"
+                className={`wa-pill-tab ${activeTab === 'clicked' ? 'wa-pill-tab-active' : ''}`}
+                onClick={() => {
+                  whatsappFilters.clearFilters();
+                  setActiveTab('clicked');
+                }}
+              >
+                <MousePointerClick size={14} className="wa-pill-icon" />
+                <span>Clicked</span>
+                <span className="wa-pill-badge">{clickedCount}</span>
+              </button>
             </>
           )}
         </div>
@@ -1409,18 +1464,6 @@ const WhatsApp = () => {
             <RefreshCw size={15} color={followUpView ? '#4338ca' : '#6366f1'} />
             <span>{followUpView ? 'Follow-up View' : 'Flip Table'}</span>
           </button>
-
-          <button
-            type="button"
-            className={`wa-btn-filter ${showFilters ? 'wa-btn-filter-active' : ''}`}
-            onClick={() => setShowFilters((prev) => !prev)}
-            title="Toggle filters"
-          >
-            <Filter size={15} color={showFilters ? '#4338ca' : '#6366f1'} />
-            <span>Filters</span>
-            {whatsappFilters.hasFilters && <span className="wa-filter-badge-dot" />}
-          </button>
-
           <button
             type="button"
             className="wa-btn-export"
@@ -1544,38 +1587,38 @@ const WhatsApp = () => {
               </p>
               {getCurrentTemplateStatuses(failureDetailContact).length > 0
                 ? WHATSAPP_TEMPLATES.map((template) => {
-                const message = getCurrentTemplateStatuses(failureDetailContact)
-                  .find((item) => item.templateName === template.templateName);
-                const status = message?.status || 'not_sent';
-                const label = status === 'failed'
-                  ? 'Failed'
-                  : status === 'accepted'
-                    ? 'Accepted by WhatsApp'
-                  : status === 'delivered'
-                    ? 'Delivered'
-                    : status === 'read'
-                      ? 'Read'
-                      : isAcceptedWhatsAppStatus(status)
-                        ? 'Sent'
-                        : 'Not sent';
-                return (
-                  <div key={template.templateName} style={{ padding: '0.65rem 0', borderTop: '1px solid #e5e7eb' }}>
-                    <p style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: '0.875rem' }}>
-                      {template.templateName}: {label}
-                    </p>
-                    {status === 'failed' && (
-                      <p role="status" style={{ margin: '0.3rem 0 0', color: '#991b1b', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
-                        {formatFailureReason(message.failureReason)}
+                  const message = getCurrentTemplateStatuses(failureDetailContact)
+                    .find((item) => item.templateName === template.templateName);
+                  const status = message?.status || 'not_sent';
+                  const label = status === 'failed'
+                    ? 'Failed'
+                    : status === 'accepted'
+                      ? 'Accepted by WhatsApp'
+                      : status === 'delivered'
+                        ? 'Delivered'
+                        : status === 'read'
+                          ? 'Read'
+                          : isAcceptedWhatsAppStatus(status)
+                            ? 'Sent'
+                            : 'Not sent';
+                  return (
+                    <div key={template.templateName} style={{ padding: '0.65rem 0', borderTop: '1px solid #e5e7eb' }}>
+                      <p style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: '0.875rem' }}>
+                        {template.templateName}: {label}
                       </p>
-                    )}
-                  </div>
-                );
-              })
+                      {status === 'failed' && (
+                        <p role="status" style={{ margin: '0.3rem 0 0', color: '#991b1b', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+                          {formatFailureReason(message.failureReason)}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
                 : (
-                <p role="status" style={{ margin: 0, color: '#111827', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
-                  {failureDetailContact.failureReason
-                    || 'No template-specific delivery details are available for this contact yet.'}
-                </p>
+                  <p role="status" style={{ margin: 0, color: '#111827', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+                    {failureDetailContact.failureReason
+                      || 'No template-specific delivery details are available for this contact yet.'}
+                  </p>
                 )}
             </div>
           </section>
@@ -1816,7 +1859,7 @@ const WhatsApp = () => {
                             <input
                               type="checkbox"
                               checked={isChecked}
-                              onChange={() => {}} // handled by row click
+                              onChange={() => { }} // handled by row click
                               style={{ cursor: 'pointer' }}
                             />
                             <div style={{ minWidth: 0 }}>

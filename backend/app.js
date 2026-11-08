@@ -1,4 +1,3 @@
-
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -12,6 +11,7 @@ const companyRoutes = require('./routes/companyRoutes');
 
 const { runFollowUpEmailCheck } = require('./services/followUpService');
 const { runWhatsAppReplyFollowUpCheck } = require('./services/whatsappReplyFollowUpService');
+const { runAutoCallCheck } = require('./services/autoCallService');
 const {
   isFollowUpCheckRunning,
   setFollowUpCheckRunning,
@@ -51,6 +51,9 @@ const FOLLOW_UP_CRON_TIMEZONE =
   process.env.FOLLOW_UP_CRON_TIMEZONE || 'Asia/Kolkata';
 
 let lastFollowUpCronRunKey = '';
+
+
+
 
 if (process.env.ENABLE_FOLLOW_UP_CRON === 'true') {
   cron.schedule(
@@ -123,7 +126,16 @@ async function checkWhatsAppReplyFollowUps() {
 if (process.env.ENABLE_WHATSAPP === 'true') {
   setInterval(checkWhatsAppReplyFollowUps, WHATSAPP_REPLY_FOLLOWUP_INTERVAL_SECONDS * 1000);
 }
-
+// Automatic AI calls for WhatsApp clickers: 9, 11, 1, 3, 5 and 7 (India time)
+cron.schedule('0 9,11,13,15,17,19 * * *', async () => {    try {
+      const result = await runAutoCallCheck();
+      console.log('[AutoCall] Check finished:', result);
+    } catch (err) {
+      console.error('[AutoCall] Check failed:', err.message);
+    }
+  },
+  { timezone: 'Asia/Kolkata' }
+);
 // Start server
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

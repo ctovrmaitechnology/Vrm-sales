@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, RefreshCw, User, Mail, Building2, Users as UsersIcon } from 'lucide-react';
+import { Plus, RefreshCw, Download, User, Mail, Building2, Users as UsersIcon, Trash2 } from 'lucide-react';
 import Button from '../components/Button';
 import TablePagination from '../components/TablePagination';
 import TableFilters from '../components/TableFilters';
 import useTableFilters from '../hooks/useTableFilters';
 import useTablePagination from '../hooks/useTablePagination';
-
 const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
 const USER_FILTER_CONFIG = { searchFields: ['employee_name'] };
@@ -57,6 +56,9 @@ const Users = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [exporting, setExporting] = useState(false);
+    const [reportDate, setReportDate] = useState('');
+const [deletingId, setDeletingId] = useState(null);
   const historyQuery = useQuery({
     queryKey: ['user-history', selectedUserId, fromDate, toDate],
     enabled: Boolean(selectedUserId),
@@ -112,9 +114,55 @@ const Users = () => {
       setSaving(false);
     }
   };
-
+  
   const selectUser = (id) => setSelectedUserId(String(id));
+  const deleteEmployee = async (user) => {
+  const ok = window.confirm(
+    `Remove ${user.employee_name}?\n\nTheir leads, companies and history are kept, but they will no longer appear in user lists.`
+  );
+  if (!ok) return;
+  setDeletingId(user.id);
+  setError('');
+  setNotice('');
+  try {
+    const response = await fetch(apiUrl(`/api/users/${user.id}`), { method: 'DELETE' });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(result?.error || 'Failed to remove employee.');
+    queryClient.setQueryData(['users'], (current = []) => current.filter((u) => u.id !== user.id));
+    if (String(user.id) === selectedUserId) setSelectedUserId('');
+    await queryClient.invalidateQueries({ queryKey: ['overview-stats'] });
+    setNotice(`${user.employee_name} was removed.`);
+  } catch (deleteError) {
+    setError(deleteError.message);
+  } finally {
+    setDeletingId(null);
+  }
+};
   const refreshHistory = () => historyQuery.refetch();
+  const downloaddailyReport = async () => {
+     setExporting(true);
+     setError('');
+     try {
+       const response = await fetch(apiUrl('/api/users/daily-report'));
+       if (!response.ok) {
+         const data = await response.json().catch(() => null);
+         throw new Error(data?.error || 'Failed to download the daily report.');
+       }
+       const blob = await response.blob();
+       const url = URL.createObjectURL(blob);
+       const link = document.createElement('a');
+       link.href = url;
+       link.download = `team-daily-report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+       document.body.appendChild(link);
+       link.click();
+       link.remove();
+       setTimeout(() => URL.revokeObjectURL(url), 1000);
+     } catch (err) {
+       setError(err.message || 'Failed to download the daily report.');
+     } finally {
+       setExporting(false);
+     }
+   };
 
   const selectedUserObj = users.find((user) => String(user.id) === selectedUserId) || history?.user;
 
@@ -127,13 +175,24 @@ const Users = () => {
           <p className="page-subtitle">Manage team members, assigned records, and performance metrics</p>
         </div>
         <div className="flex gap-2 items-center">
+        <input
+            type="date"
+            value={reportDate}
+            onChange={(e) => setReportDate(e.target.value)}
+            title="Report date (empty = yesterday)"
+            style={{ padding: '0.45rem 0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+          />
+
+             <Button variant="secondary" icon={<Download size={16} />} onClick={downloaddailyReport} disabled={exporting}>
+                  {exporting ? 'Preparing...' : 'Export daily Report'}
+             </Button>
           <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => usersQuery.refetch()} disabled={usersQuery.isFetching}>
             Refresh
           </Button>
         </div>
       </div>
 
-      {notice && (
+       {notice && (
         <div
           style={{
             marginBottom: '1rem',
@@ -306,13 +365,24 @@ const Users = () => {
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <Button
-                        variant={isSelected ? 'primary' : 'secondary'}
-                        onClick={() => selectUser(user.id)}
-                        style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem' }}
-                      >
-                        {isSelected ? 'Viewing History' : 'View History'}
-                      </Button>
+                      <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <Button
+                          variant={isSelected ? 'primary' : 'secondary'}
+                          onClick={() => selectUser(user.id)}
+                          style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem' }}
+                        >
+                          {isSelected ? 'Viewing History' : 'View History'}
+                        </Button>
+                        <button
+                          type="button"
+                          title="Delete employee"
+                          disabled={deletingId === user.id}
+                          onClick={() => deleteEmployee(user)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0.4rem 0.75rem', border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', borderRadius: 8, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          <Trash2 size={14} /> {deletingId === user.id ? 'Removing...' : 'Delete'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

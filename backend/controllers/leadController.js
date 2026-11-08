@@ -979,20 +979,31 @@ async function deleteManualLeadController(req, res) {
     console.error('Failed to delete manual lead:', err.message);
     res.status(500).json({ error: 'Failed to delete lead.' });
   }
-}
-
-async function updateLeadCallStatus(req, res) {
+}async function updateLeadCallStatus(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id < 1) {
     return res.status(400).json({ error: 'Invalid lead ID.' });
   }
   const { is_called, called_by_user_id } = req.body;
+  const nextCalled = Boolean(is_called);
+  const nextCaller = called_by_user_id ? Number(called_by_user_id) : null;
   try {
+    const existing = await prisma.leads.findUnique({
+      where: { id },
+      select: { is_called: true, called_by_user_id: true, called_at: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Lead not found.' });
+    }
+    const changed = nextCalled && (!existing.is_called || existing.called_by_user_id !== nextCaller);
+    const calledAt = !nextCalled ? null : changed ? new Date() : existing.called_at;
+
     const updated = await prisma.leads.update({
       where: { id },
       data: {
-        is_called: Boolean(is_called),
-        called_by_user_id: called_by_user_id ? Number(called_by_user_id) : null,
+        is_called: nextCalled,
+        called_by_user_id: nextCaller,
+        called_at: calledAt,
         updated_at: new Date(),
       },
       select: {
@@ -1008,7 +1019,6 @@ async function updateLeadCallStatus(req, res) {
     return res.status(500).json({ error: 'Failed to update call status.' });
   }
 }
-
 module.exports = {
   getAllLeads,
   sendLeadTemplate,
