@@ -414,6 +414,9 @@ async function getAllActiveLeads() {
        status: lead.status || null,
        whatsappStatus: lead.whatsapp_status || null,
        whatsappClickCount: lead.click_count || 0,
+       clicked: lead.whatsapp_status === 'clicked' || (lead.click_count || 0) > 0,
+       clickedAt: lead.clicked_at || null,
+       autoCallStatus: lead.auto_call_status || null,
        whatsappBookDemoClickCount: lead.demo_click_count || 0,
        whatsappVideoClickCount: lead.video_click_count || 0,
        followUpCount: lead.follow_up_count || 0,
@@ -1108,6 +1111,7 @@ async function updateWhatsAppLeadStatus(whatsappNumber, status, action, extra = 
           updated_at: new Date()
         };
         if (extra.read === true || action === 'read') {
+          
           leadUpdateData.whatsapp_read = true;
         }
         await prisma.leads.update({
@@ -1180,6 +1184,7 @@ async function updateWhatsAppLeadStatus(whatsappNumber, status, action, extra = 
       if (extra.whatsappStatus) waData.whatsapp_status = extra.whatsappStatus;
     }
     if (extra.read === true || action === 'read') waData.read = true;
+        if (extra.clicked && !waLead?.clicked_at) waData.clicked_at = new Date();
     if (extra.clicked) waData.click_count = { increment: 1 };
     if (action === 'demo_clicked') waData.demo_click_count = { increment: 1 };
     else if (action === 'video_clicked') waData.video_click_count = { increment: 1 };
@@ -1207,6 +1212,7 @@ async function updateWhatsAppLeadStatus(whatsappNumber, status, action, extra = 
             status: extra.skipLeadFieldSync ? 'new' : (status || 'sent'),
             whatsapp_status: extra.skipLeadFieldSync ? null : (extra.whatsappStatus || status || 'sent'),
             read: Boolean(extra.read === true || action === 'read'),
+           clicked_at: extra.clicked ? new Date() : null,
             created_at: new Date(),
             updated_at: new Date()
           }
@@ -1686,6 +1692,7 @@ async function trackUnifiedClick(identifier, channel, action) {
     if (waLead && waLead.status !== 'deleted') {
       foundAny = true;
       const data = { updated_at: new Date(), status: 'clicked', whatsapp_status: 'clicked' };
+      if (!waLead.clicked_at) data.clicked_at = new Date();
       data.click_count = { increment: 1 };
       if (isDemoClick) data.demo_click_count = { increment: 1 };
       if (isVideoClick) data.video_click_count = { increment: 1 };

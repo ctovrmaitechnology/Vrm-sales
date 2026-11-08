@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import '../styles/calls.css';
 import {
   Phone, PhoneCall, PhoneIncoming, PhoneMissed, PhoneOff,
   Clock, CheckCircle, XCircle, RefreshCw, X, Mic, ChevronLeft, ChevronRight,
@@ -437,8 +438,8 @@ export default function Calls() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <div className="p-6 max-w-7xl mx-auto">
+    <div className="calls-page">
+      <div className="p-2">
 
         {/* Page Header */}
         <div className="mb-6 flex items-center justify-between">

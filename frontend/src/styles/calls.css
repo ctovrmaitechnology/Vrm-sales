@@ -1,0 +1,100 @@
+/* ==========================================================================
+   CALLS PAGE
+   The Calls page is written with Tailwind utility classes. The rest of the app
+   uses hand-written CSS, so this file gives the page its own small reset
+   (scoped to .calls-page) and lets it sit on the same Aurora background.
+   ========================================================================== */
+
+.calls-page {
+  width: 100%;
+  text-align: left;
+  line-height: 1.5;
+  color: #0f172a;
+}
+
+.calls-page *,
+.calls-page ::before,
+.calls-page ::after {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: #e5e7eb;
+}
+
+/* undo global.css element styles inside this page */
+.calls-page h1,
+.calls-page h2,
+.calls-page h3,
+.calls-page h4,
+.calls-page h5,
+.calls-page h6 {
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  letter-spacing: normal;
+  margin: 0;
+}
+
+.calls-page p {
+  margin: 0;
+}
+
+.calls-page table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.calls-page th,
+.calls-page td {
+  padding: 0;
+  border-bottom: 0;
+  background-color: transparent;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+.calls-page tr:hover td {
+  background-color: transparent;
+}
+
+.calls-page button,
+.calls-page input,
+.calls-page select,
+.calls-page textarea {
+  font-family: inherit;
+  font-size: 100%;
+  line-height: inherit;
+  margin: 0;
+}
+
+.calls-page button {
+  cursor: pointer;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  padding: 0;
+  outline: none;
+}
+
+.calls-page button:disabled {
+  cursor: not-allowed;
+}
+
+.calls-page input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+}
+
+.calls-page svg {
+  display: block;
+  vertical-align: middle;
+}
+
+/* the small inline icons in buttons and badges should sit on the text line */
+.calls-page button svg,
+.calls-page span svg {
+  display: inline-block;
+}

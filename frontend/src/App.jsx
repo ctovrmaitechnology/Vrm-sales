@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
+import RocketReach from './pages/RocketReach';
 import Layout from './components/Layout';
 
 import Login from './pages/login';
@@ -59,6 +59,8 @@ function App() {
               <Route path="insights" element={<Insights />} />
               <Route path="insight" element={<Navigate to="/app/insights" replace />} />
               <Route path="users" element={<Users />} />
+              <Route path="RocketReach" element={<RocketReach />} />
+
             </Route>
 
             {/* EMAIL DASHBOARD */}

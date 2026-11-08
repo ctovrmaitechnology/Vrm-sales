@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -9,6 +10,7 @@ import {
   Building2,
   PhoneCall,
   BarChart3,
+  Search, 
   ChevronDown,
   LogOut,
   Moon,
@@ -49,6 +51,7 @@ const Sidebar = () => {
     { path: '/app/company', label: 'Company', icon: <Building2 size={20} /> },
     { path: '/app/insights', label: 'Insights', icon: <BarChart3 size={20} /> },
     { path: '/app/users', label: 'Users', icon: <Users size={20} /> },
+    { path: '/app/RocketReach', label: 'Lead Finder', icon: <Search size={20} /> },
   ];
 
   return (

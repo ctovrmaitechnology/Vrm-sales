@@ -137,7 +137,7 @@ const Home = () => {
     setWorkloadExportError('');
 
     try {
-      const response = await fetch(apiUrl(`/api/workload/export?format=${format}`));
+      const response = await fetch(apiUrl(`/api/overview-stats/workload-export?format=${format}`));
       if (!response.ok) {
         let message = `Failed to download the ${format.toUpperCase()} report.`;
         try {
