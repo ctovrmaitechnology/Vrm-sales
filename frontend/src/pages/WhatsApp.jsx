@@ -528,7 +528,7 @@ const WhatsApp = () => {
               <th style={{ width: '24%' }}>
                 <span className="wa-th-content">Name</span>
               </th>
-              <th style={{ width: '18%' }}>
+              <th style={{ width: '22%' }}>
                 <span className="wa-th-content">Phone Number</span>
               </th>
               <th style={{ width: '20%', textAlign: 'center' }}>
