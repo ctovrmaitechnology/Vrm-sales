@@ -61,6 +61,20 @@ function last10(phone) {
   return digits.slice(-10);
 }
 
+/** True only if this phone clicked Book a Demo or Demo Video in WhatsApp */
+async function isDemoClicker(phone) {
+  const key = last10(phone);
+  if (!key) return false;
+  const row = await prisma.whatsAppLeads.findFirst({
+    where: {
+      whatsapp_number: { endsWith: key },
+      OR: [{ video_click_count: { gt: 0 } }, { demo_click_count: { gt: 0 } }],
+    },
+    select: { id: true },
+  });
+  return !!row;
+}
+
 /**
  * GET /api/calls/contacts
  * Returns all contacts with a phone number from leads, company, and WhatsAppLeads,
@@ -73,7 +87,7 @@ async function getCallableContacts(req, res) {
     const whatsappSentLeads = await prisma.whatsAppLeads.findMany({
       where: {
         whatsapp_number: { not: null },
-        whatsapp_status: { in: ['sent', 'delivered', 'read', 'clicked'] },
+        OR: [{ video_click_count: { gt: 0 } }, { demo_click_count: { gt: 0 } }],
       },
       select: { whatsapp_number: true },
     });
@@ -129,7 +143,7 @@ async function getCallableContacts(req, res) {
       prisma.whatsAppLeads.findMany({
         where: {
           whatsapp_number: { not: null },
-          whatsapp_status: { in: ['sent', 'delivered', 'read', 'clicked'] },
+          OR: [{ video_click_count: { gt: 0 } }, { demo_click_count: { gt: 0 } }],
         },
         select: {
           id: true,
@@ -254,14 +268,14 @@ async function startCallCampaign(req, res) {
   const deduped = [];
   for (const c of contacts) {
     const key = last10(c.phone);
-    if (key && !seenKeys.has(key)) {
+    if (key && !seenKeys.has(key) && (await isDemoClicker(c.phone))) {
       seenKeys.add(key);
       deduped.push(c);
     }
   }
 
   if (!deduped.length) {
-    return res.status(400).json({ error: 'No valid unique contacts to call.' });
+    return res.status(400).json({ error: 'No valid contacts to call. Only people who clicked Book a Demo or Demo Video can be called.' });
   }
 
   // Respond immediately
@@ -456,8 +470,10 @@ async function startSingleCall(req, res) {
   const { phone, name, contactType, id } = req.body;
 
   if (!phone) {
-    return res.status(400).json({ error: 'Phone number is required.' });
+    if (!(await isDemoClicker(phone))) {
+    return res.status(403).json({ error: 'Only contacts who clicked Book a Demo or Demo Video can be called.' });
   }
+}
 
   let vapiCallId = null;
   let callStatus = 'queued';
