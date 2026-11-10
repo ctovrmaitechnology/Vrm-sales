@@ -601,7 +601,7 @@ export default function Calls() {
                       <td colSpan={8} className="text-center py-16">
                         <Users size={36} className="mx-auto text-gray-200 mb-3" />
                         <p className="text-sm text-gray-400 font-medium">No contacts found</p>
-                        <p className="text-xs text-gray-300 mt-1">Contacts appear here after receiving a WhatsApp message</p>
+                        <p className="text-xs text-gray-300 mt-1">Contacts appear here after receiving a WhatsApp message with Contacts appear here after they click Book a Demo or Demo Video in WhatsApp.</p>
                       </td>
                     </tr>
                   )}

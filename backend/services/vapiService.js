@@ -11,7 +11,13 @@ function vapiHeaders() {
     'Content-Type': 'application/json',
   };
 }
-
+/** Convert any Indian number format to +91XXXXXXXXXX (other countries pass through) */
+function toE164(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 11 && digits.startsWith('0')) return `+91${digits.slice(1)}`;
+  return `+${digits}`;
+}
 /**
  * Initiate an outbound phone call via VAPI.
  */
@@ -20,7 +26,8 @@ async function startCall({ phone, name, assistantId, assistantOverrides }) {
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
     assistantId: assistantId || VAPI_ASSISTANT_ID,
     customer: {
-      number: phone,
+      number: toE164(phone),
+
       name: name || undefined,
     },
   };

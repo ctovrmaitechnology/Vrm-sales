@@ -19,6 +19,7 @@ async function runAutoCallCheck() {
     const due = await prisma.whatsAppLeads.findMany({
       where: {
         clicked_at: { not: null, lte: cutoff },
+        OR: [{ video_click_count: { gt: 0 } }, { demo_click_count: { gt: 0 } }],
         auto_call_status: null,
         whatsapp_number: { not: null },
       },
@@ -65,7 +66,8 @@ async function runAutoCallCheck() {
         continue;
       }
 
-      const e164 = `+${String(wa.whatsapp_number).replace(/\D/g, '')}`;
+      const digits = String(wa.whatsapp_number).replace(/\D/g, '');
+      const e164 = digits.length === 10 ? `+91${digits}` : `+${digits}`;
       const name = wa.name || lead?.full_name || null;
       let vapiCallId = null;
       let ok = true;
