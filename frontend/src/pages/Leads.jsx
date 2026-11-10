@@ -738,7 +738,7 @@ const Leads = () => {
                 <th style={{ width: '20%' }} className="leads-th-sortable" onClick={() => handleSort('email')}>
                   <span className="wa-th-content">EMAIL <span className="wa-sort-arrows">{sortField === 'email' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
-                <th style={{ width: '12%' }} className="leads-th-sortable" onClick={() => handleSort('phone_number')}>
+                <th style={{ width: '15%' }} className="leads-th-sortable" onClick={() => handleSort('phone_number')}>
                   <span className="wa-th-content">PHONE NUMBER <span className="wa-sort-arrows">{sortField === 'phone_number' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
                 <th style={{ width: '10%' }} className="leads-th-sortable" onClick={() => handleSort('source')}>

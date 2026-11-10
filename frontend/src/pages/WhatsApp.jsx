@@ -716,7 +716,7 @@ const WhatsApp = () => {
                         >
                           {initials}
                         </span>
-                        <span style={{ fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <span style={{ fontWeight: 600, color: '#0f172a', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.25 }}>
                           {lead.name || '-'}
                         </span>
                       </div>
