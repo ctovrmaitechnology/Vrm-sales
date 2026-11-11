@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, RefreshCw, Download, User, Mail, Building2, Users as UsersIcon, Trash2 } from 'lucide-react';
 import Button from '../components/Button';
+import TeamsPanel from '../components/TeamsPanel';
 import TablePagination from '../components/TablePagination';
 import TableFilters from '../components/TableFilters';
 import useTableFilters from '../hooks/useTableFilters';
@@ -58,6 +59,7 @@ const Users = () => {
   const [notice, setNotice] = useState('');
   const [exporting, setExporting] = useState(false);
     const [reportDate, setReportDate] = useState('');
+      const [reportTo, setReportTo] = useState('');
 const [deletingId, setDeletingId] = useState(null);
   const historyQuery = useQuery({
     queryKey: ['user-history', selectedUserId, fromDate, toDate],
@@ -143,7 +145,10 @@ const [deletingId, setDeletingId] = useState(null);
      setExporting(true);
      setError('');
      try {
-       const response = await fetch(apiUrl('/api/users/daily-report'));
+       const params = new URLSearchParams();
+       if (reportDate) params.set('date', reportDate);
+       if (reportTo) params.set('to', reportTo);
+       const response = await fetch(apiUrl(`/api/users/daily-report?${params.toString()}`));      
        if (!response.ok) {
          const data = await response.json().catch(() => null);
          throw new Error(data?.error || 'Failed to download the daily report.');
@@ -175,15 +180,35 @@ const [deletingId, setDeletingId] = useState(null);
           <p className="page-subtitle">Manage team members, assigned records, and performance metrics</p>
         </div>
         <div className="flex gap-2 items-center">
-        <input
+          <input
             type="date"
             value={reportDate}
             onChange={(e) => setReportDate(e.target.value)}
-            title="Report date (empty = yesterday)"
+            title="From date (empty = today)"
+            style={{ padding: '0.45rem 0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+          />
+          <input
+            type="date"
+            value={reportTo}
+            min={reportDate || undefined}
+            onChange={(e) => setReportTo(e.target.value)}
+            title="To date (empty = same as From)"
             style={{ padding: '0.45rem 0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}
           />
 
              <Button variant="secondary" icon={<Download size={16} />} onClick={downloaddailyReport} disabled={exporting}>
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
                   {exporting ? 'Preparing...' : 'Export daily Report'}
              </Button>
           <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => usersQuery.refetch()} disabled={usersQuery.isFetching}>
@@ -226,7 +251,7 @@ const [deletingId, setDeletingId] = useState(null);
           {error || usersQuery.error?.message || historyQuery.error?.message}
         </div>
       )}
-
+<TeamsPanel />
       {/* Quick Add Employee Card */}
       <div
         style={{

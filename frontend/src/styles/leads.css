@@ -475,4 +475,6 @@
   cursor: pointer;
   margin-left: 0.35rem;
 }
-
+.leads-page-container .wa-cards-table-container { scrollbar-width: thin; }
+.leads-page-container .wa-cards-table-container::-webkit-scrollbar { display: block; height: 8px; }
+.leads-page-container .wa-cards-table-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }

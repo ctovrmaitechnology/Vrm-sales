@@ -156,185 +156,148 @@ function getIstDay(dateStr, daysAgo) {
   return { start: new Date(startMs), end: new Date(startMs + DAY_MS - 1) };
 }
 
+const UNASSIGNED = 'Unassigned';
+const MAX_RANGE_DAYS = 92;
+
+// Builds the single "Team Report" sheet: one block per team.
+// Day columns = From..To dates. Overall columns = everything up to the To date.
+async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
+  const [users, teams, leads, calls] = await Promise.all([
+    prisma.users.findMany({
+      where: { is_active: true },
+      orderBy: { employee_name: 'asc' },
+      select: { id: true, employee_name: true, team_id: true },
+    }),
+    prisma.teams.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+    prisma.leads.findMany({
+      where: { user_id: { not: null }, created_at: { lte: rangeEnd } },
+      select: { user_id: true, created_at: true, lead_status: true },
+    }),
+    prisma.leads.findMany({
+      where: { is_called: true, called_by_user_id: { not: null }, called_at: { lte: rangeEnd } },
+      select: { called_by_user_id: true, called_at: true },
+    }),
+  ]);
+
+  const teamName = new Map(teams.map((t) => [t.id, t.name]));
+  const blank = () => ({
+    callsDay: 0, leadsDay: 0, callsAll: 0, leadsAll: 0,
+    interested: 0, not_interested: 0, converted: 0,
+  });
+  const keys = ['callsDay', 'leadsDay', 'callsAll', 'leadsAll', 'interested', 'not_interested', 'converted'];
+  const inDay = (d) => new Date(d) >= rangeStart;
+
+  const people = new Map(users.map((u) => [u.id, {
+    name: u.employee_name,
+    team: (u.team_id && teamName.get(u.team_id)) || UNASSIGNED,
+    ...blank(),
+  }]));
+
+  for (const l of leads) {
+    const p = people.get(l.user_id); if (!p) continue;
+    p.leadsAll++;
+    if (inDay(l.created_at)) p.leadsDay++;
+    if (['interested', 'not_interested', 'converted'].includes(l.lead_status)) p[l.lead_status]++;
+  }
+  for (const c of calls) {
+    const p = people.get(c.called_by_user_id); if (!p) continue;
+    p.callsAll++;
+    if (inDay(c.called_at)) p.callsDay++;
+  }
+
+  const totalOf = (list) => keys.map((k) => list.reduce((n, x) => n + x[k], 0));
+  const COLS = 8;
+
+  const sheet = workbook.addWorksheet('Team Report');
+  sheet.columns = [{ width: 28 }, ...Array.from({ length: COLS - 1 }, () => ({ width: 16 }))];
+
+  const fromStr = istDate(rangeStart.getTime());
+  const toStr = istDate(rangeEnd.getTime());
+  sheet.mergeCells(1, 1, 1, COLS);
+  sheet.getCell(1, 1).value = fromStr === toStr ? `Team Report: ${fromStr}` : `Team Report: ${fromStr} to ${toStr}`;
+  sheet.getCell(1, 1).font = { bold: true, size: 14 };
+  sheet.addRow([]);
+
+  const thin = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+  const border = { top: thin, left: thin, bottom: thin, right: thin };
+  const styleRowCells = (r, opts = {}) => {
+    for (let c = 1; c <= COLS; c++) {
+      const cell = r.getCell(c);
+      cell.border = border;
+      if (c > 1) cell.alignment = { horizontal: 'center' };
+      if (opts.fill) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opts.fill } };
+      if (opts.bold) cell.font = { bold: true, color: opts.color ? { argb: opts.color } : undefined };
+    }
+  };
+
+  const blockHeaders = ['Person', 'Calls (day)', 'Leads (day)', 'Calls (overall)', 'Leads (overall)', 'Interested', 'Not Interested', 'Converted'];
+
+  const addBlock = (name, members) => {
+    // Team name: one merged cell across all 8 columns
+    const titleRow = sheet.addRow([name]);
+    sheet.mergeCells(titleRow.number, 1, titleRow.number, COLS);
+    const t = sheet.getCell(titleRow.number, 1);
+    t.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+    t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    t.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleRow.height = 26;
+
+    styleRowCells(sheet.addRow(blockHeaders), { fill: 'FF2563EB', bold: true, color: 'FFFFFFFF' });
+
+    if (members.length === 0) {
+      const empty = sheet.addRow(['(no members)']);
+      styleRowCells(empty);
+      empty.getCell(1).font = { italic: true, color: { argb: 'FF94A3B8' } };
+    }
+    for (const p of members) {
+      styleRowCells(sheet.addRow([p.name, ...keys.map((k) => p[k])]));
+    }
+    styleRowCells(sheet.addRow(['TEAM TOTAL', ...totalOf(members)]), { fill: 'FFDBEAFE', bold: true });
+    sheet.addRow([]);
+  };
+
+  const listed = [];
+  for (const team of teams) {
+    const members = [...people.values()].filter((p) => p.team === team.name);
+    listed.push(...members);
+    addBlock(team.name, members);
+  }
+  const unassigned = [...people.values()].filter((p) => p.team === UNASSIGNED);
+  if (unassigned.length) {
+    listed.push(...unassigned);
+    addBlock(UNASSIGNED, unassigned);
+  }
+  styleRowCells(sheet.addRow(['GRAND TOTAL', ...totalOf(listed)]), { fill: 'FF1E3A8A', bold: true, color: 'FFFFFFFF' });
+}
+
 async function exportdailyReport(req, res) {
   try {
-const week = getIstDay(req.query.date, 0);
-  if (Number.isNaN(week.start.getTime())) {
-    return res.status(400).json({ success: false, error: 'Enter a valid date (YYYY-MM-DD).' });
-  }    
-    const range = { gte: week.start, lte: week.end };
-    const prevRange = {
-      gte: new Date(week.start.getTime() - 7 * DAY_MS),
-      lte: new Date(week.start.getTime() - 1),
-    };
-    const hasUser = { not: null };
-
-    const [
-      users, leadsW, companiesW, emailsW,
-      leadsP, companiesP, emailsP, callsW, callsP,
-      ownedLeads, ownedCompanies, waLeads, waCompanies,
-    ] = await Promise.all([
-      prisma.users.findMany({
-        where: { is_active: true },
-        orderBy: { employee_name: 'asc' },
-        select: { id: true, employee_name: true },
-      }),
-      prisma.leads.findMany({ where: { user_id: hasUser, created_at: range }, select: { user_id: true, created_at: true } }),
-      prisma.company.findMany({ where: { user_id: hasUser, created_at: range }, select: { user_id: true, created_at: true } }),
-      prisma.email_history.findMany({ where: { user_id: hasUser, attempted_at: range }, select: { user_id: true, status: true, attempted_at: true } }),
-      prisma.leads.groupBy({ by: ['user_id'], where: { user_id: hasUser, created_at: prevRange }, _count: { _all: true } }),
-      prisma.company.groupBy({ by: ['user_id'], where: { user_id: hasUser, created_at: prevRange }, _count: { _all: true } }),
-      prisma.email_history.groupBy({ by: ['user_id'], where: { user_id: hasUser, attempted_at: prevRange, status: 'sent' }, _count: { _all: true } }),
-      prisma.leads.findMany({
-        where: { is_called: true, called_by_user_id: hasUser, called_at: range },
-        select: { called_by_user_id: true, called_at: true },
-      }),
-      prisma.leads.groupBy({
-        by: ['called_by_user_id'],
-        where: { is_called: true, called_by_user_id: hasUser, called_at: prevRange },
-        _count: { _all: true },
-      }),
-      prisma.leads.groupBy({ by: ['user_id'], where: { user_id: hasUser }, _count: { _all: true } }),
-      prisma.company.groupBy({ by: ['user_id'], where: { user_id: hasUser }, _count: { _all: true } }),
-      prisma.leads.groupBy({ by: ['user_id'], where: { user_id: hasUser, whatsapp_read: true }, _count: { _all: true } }),
-      prisma.company.groupBy({ by: ['user_id'], where: { user_id: hasUser, whatsapp_read: true }, _count: { _all: true } }),
-    ]);
-       // Converted leads: manual "Convert to Lead" events in the report period, credited to the lead's owner
-    const convertedEvents = await prisma.lead_status.findMany({
-      where: { action: 'converted_to_lead', lead_id: { not: null }, created_at: range },
-      select: { lead_id: true },
-    });
-    const convertedIds = [...new Set(convertedEvents.map((e) => e.lead_id))];
-    const convertedLeads = convertedIds.length
-      ? await prisma.leads.findMany({
-          where: { id: { in: convertedIds }, user_id: hasUser },
-          select: { user_id: true },
-        })
-      : [];
-    const convertedMap = new Map();
-    for (const l of convertedLeads) convertedMap.set(l.user_id, (convertedMap.get(l.user_id) || 0) + 1);
-    const toMap = (rows) => new Map(rows.map((r) => [r.user_id, r._count._all]));
-    const get = (map, id) => map.get(id) || 0;
-    const leadsPMap = toMap(leadsP), companiesPMap = toMap(companiesP), emailsPMap = toMap(emailsP);
-    const ownedLeadsMap = toMap(ownedLeads), ownedCompaniesMap = toMap(ownedCompanies);
-    const waLeadsMap = toMap(waLeads), waCompaniesMap = toMap(waCompanies);
-    const callsPMap = new Map(callsP.map((r) => [r.called_by_user_id, r._count._all]));
-
-    const stats = new Map(users.map((u) => [u.id, {
-      name: u.employee_name, leads: 0, companies: 0, attempts: 0, sent: 0, failed: 0, calls: 0,
-      daily: Array.from({ length: 7 }, () => ({ records: 0, emails: 0, calls: 0 })),
-    }]));
-
-    const dayIndex = (d) => Math.floor((new Date(d).getTime() - week.start.getTime()) / DAY_MS);
-
-    
-
-    for (const r of leadsW) {
-      const s = stats.get(r.user_id); if (!s) continue;
-      s.leads++; const i = dayIndex(r.created_at); if (s.daily[i]) s.daily[i].records++;
+    const day = getIstDay(req.query.date, 0);
+    if (Number.isNaN(day.start.getTime())) {
+      return res.status(400).json({ success: false, error: 'Enter a valid date (YYYY-MM-DD).' });
     }
-    for (const r of companiesW) {
-      const s = stats.get(r.user_id); if (!s) continue;
-      s.companies++; const i = dayIndex(r.created_at); if (s.daily[i]) s.daily[i].records++;
-    }
-    for (const r of emailsW) {
-      const s = stats.get(r.user_id); if (!s) continue;
-      s.attempts++;
-      if (r.status === 'failed') s.failed++;
-      if (r.status === 'sent') {
-        s.sent++; const i = dayIndex(r.attempted_at); if (s.daily[i]) s.daily[i].emails++;
+
+    let rangeEnd = day.end;
+    if (req.query.to) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to))) {
+        return res.status(400).json({ success: false, error: 'Enter a valid "to" date (YYYY-MM-DD).' });
+      }
+      rangeEnd = getIstDay(req.query.to, 0).end;
+      if (Number.isNaN(rangeEnd.getTime()) || rangeEnd < day.start) {
+        return res.status(400).json({ success: false, error: 'The "to" date must be on or after the "from" date.' });
+      }
+      if (rangeEnd - day.start > MAX_RANGE_DAYS * DAY_MS) {
+        return res.status(400).json({ success: false, error: `Date range can be at most ${MAX_RANGE_DAYS} days.` });
       }
     }
-    for (const r of callsW) {
-      const s = stats.get(r.called_by_user_id); if (!s) continue;
-      s.calls++; const i = dayIndex(r.called_at); if (s.daily[i]) s.daily[i].calls++;
-    }
-
-    const rows = [];
-    for (const [id, s] of stats) {
-      const records = s.leads + s.companies;
-      rows.push({
-        s, records,
-        converted: get(convertedMap, id),
-        wa: get(waLeadsMap, id) + get(waCompaniesMap, id),
-        owned: get(ownedLeadsMap, id) + get(ownedCompaniesMap, id),
-        recChange: records - (get(leadsPMap, id) + get(companiesPMap, id)),
-        emailChange: s.sent - get(emailsPMap, id),
-        callChange: s.calls - get(callsPMap, id),
-      });
-    }
-    const teamRecords = rows.reduce((n, r) => n + r.records, 0);
-    const sum = (fn) => rows.reduce((n, r) => n + fn(r), 0);
-
-   const headers = [
-      'Employee', 'New Leads', 'New Companies', 'Total New Records',
-      'Emails Attempted', 'Emails Sent', 'Emails Failed', 'Email Success Rate',
-      'WhatsApp Read (records)', 'Calls Made', 'Converted Leads',
-      'Total Records Owned',
-    ];
-   const line = (name, r) => [
-      name, r.s.leads, r.s.companies, r.records,
-      r.s.attempts, r.s.sent, r.s.failed, r.s.attempts ? r.s.sent / r.s.attempts : 0,
-      r.wa, r.s.calls, r.converted,
-      r.owned,
-    ];
-    const totalRow = {
-      s: {
-        leads: sum((r) => r.s.leads), companies: sum((r) => r.s.companies),
-        attempts: sum((r) => r.s.attempts), sent: sum((r) => r.s.sent),
-        failed: sum((r) => r.s.failed), calls: sum((r) => r.s.calls),
-      },
-      records: teamRecords, wa: sum((r) => r.wa),converted: sum((r) => r.converted),owned: sum((r) => r.owned),
-      recChange: sum((r) => r.recChange), emailChange: sum((r) => r.emailChange),
-      callChange: sum((r) => r.callChange),
-    };
-
-    const fromStr = istDate(week.start.getTime());
-    const toStr = istDate(week.end.getTime());
-    const styleHeader = (row) => {
-      row.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
-      row.alignment = { vertical: 'middle', wrapText: true };
-      row.height = 32;
-    };
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'VRM Sales Dashboard';
-
-    // Sheet 1: Summary
-    const summary = workbook.addWorksheet('Summary');
-      summary.addRow([`Daily Team Report: ${fromStr}`]).font = { bold: true, size: 14 };
-    summary.addRow([`Generated ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST | Prepared by Admin`]);
-    summary.addRow([]);
-    styleHeader(summary.addRow(headers));
-    for (const r of rows) summary.addRow(line(r.s.name, r));
-    summary.addRow(line('TEAM TOTAL', totalRow)).font = { bold: true };
-    headers.forEach((h, i) => { summary.getColumn(i + 1).width = i === 0 ? 28 : Math.max(14, h.length + 2); });
-    const last = headers.length;
-    summary.eachRow((row, n) => {
-      if (n <= 4) return;
-      row.getCell(8).numFmt = '0%';
-    });
-    summary.views = [{ state: 'frozen', xSplit: 1, ySplit: 4 }];
-
-        // Sheet 2: Hourly activity
-    const hourly = workbook.addWorksheet('Hourly Activity');
-    const hourHeaders = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
-    styleHeader(hourly.addRow(['Employee', 'Metric', ...hourHeaders, 'Day Total']));
-    const metrics = [['New Records', 'records'], ['Emails Sent', 'emails'], ['Calls Made', 'calls']];
-    for (const { s } of rows) {
-      for (const [label, key] of metrics) {
-        const vals = s.daily.map((d) => d[key]);
-        hourly.addRow([s.name, label, ...vals, vals.reduce((a, b) => a + b, 0)]);
-      }
-    }
-    hourly.getColumn(1).width = 28; hourly.getColumn(2).width = 16;
-    for (let c = 3; c <= 27; c++) hourly.getColumn(c).width = 8;
-    hourly.views = [{ state: 'frozen', xSplit: 2, ySplit: 1 }];
+    await addTeamReportSheet(workbook, day.start, rangeEnd);
 
     const buffer = await workbook.xlsx.writeBuffer();
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="team-daily-report-${fromStr}_to_${toStr}.xlsx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="team-report-${istDate(day.start.getTime())}_to_${istDate(rangeEnd.getTime())}.xlsx"`);
     return res.send(Buffer.from(buffer));
   } catch (error) {
     console.error('Failed to build daily report:', error);

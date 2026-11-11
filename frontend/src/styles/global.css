@@ -1035,3 +1035,111 @@ body, .sidebar, .navbar, .wa-dashboard, .wa-card, .wa-table-container, .card, .d
 [data-theme='dark'] .btn-secondary:hover {
   background-color: var(--bg-page) !important;
 }
+/* Collapsible sidebar */
+.sidebar { transition: width 0.2s ease; overflow: visible; }
+.main-content { transition: margin-left 0.2s ease, width 0.2s ease, max-width 0.2s ease; }
+
+.sidebar-header { position: relative; }
+.sidebar-toggle {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid rgba(220, 234, 250, 0.95);
+  background: #ffffff;
+  color: #64748b;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+.sidebar-toggle:hover { color: #2563eb; background: #eff6ff; }
+
+.sidebar-collapsed .sidebar { width: 76px; }
+.sidebar-collapsed .main-content {
+  margin-left: 76px;
+  max-width: calc(100vw - 76px);
+  width: calc(100% - 76px);
+}
+.sidebar-collapsed .sidebar-brand-text,
+.sidebar-collapsed .nav-link span,
+.sidebar-collapsed .sidebar-user-text,
+.sidebar-collapsed .sidebar-user-chevron { display: none; }
+
+.sidebar-collapsed .sidebar-header {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.7rem;
+  padding: 1.1rem 0 0.75rem;
+}
+.sidebar-collapsed .sidebar-toggle { margin-left: 0; }
+.sidebar-collapsed .nav-link {
+  justify-content: center;
+  gap: 0;
+  padding: 0.8rem 0;
+  margin: 0.2rem 0.8rem;
+}
+.sidebar-collapsed .sidebar-bottom { padding: 0.75rem 0 !important; }
+.sidebar-collapsed .sidebar-bottom-row {
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.sidebar-collapsed .sidebar-user-pill {
+  flex: none !important;
+  width: 44px;
+  justify-content: center;
+  padding: 6px !important;
+}
+.sidebar-collapsed .sidebar-user-menu {
+  left: 8px !important;
+  right: auto !important;
+  width: 150px;
+}
+
+[data-theme='dark'] .sidebar-toggle {
+  background: #1e293b;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+/* Sidebar header order: [logo] [VRM Sales Agent] [toggle] */
+.sidebar-header { gap: 0.7rem; }
+
+.sidebar-header .sidebar-logo { order: 1; flex-shrink: 0; }
+.sidebar-header .sidebar-brand-text { order: 2; flex: 1; min-width: 0; }
+
+.sidebar-header .sidebar-toggle {
+  order: 3;
+  margin-left: 0;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.sidebar-header .sidebar-toggle:hover {
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.38);
+}
+
+/* Collapsed: logo on top, toggle underneath */
+.sidebar-collapsed .sidebar-header .sidebar-logo { order: 1; }
+.sidebar-collapsed .sidebar-header .sidebar-toggle { order: 2; }
+
+[data-theme='dark'] .sidebar-header .sidebar-toggle {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
+  border: none;
+}
+.sidebar-collapsed .sidebar-header .sidebar-brand-text {
+  display: none !important;
+}
+.sidebar { overflow: hidden; }
+.sidebar-header .sidebar-brand-text { white-space: nowrap; overflow: hidden; }

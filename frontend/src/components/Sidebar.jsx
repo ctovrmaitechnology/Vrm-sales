@@ -12,13 +12,15 @@ import {
   BarChart3,
   Search, 
   ChevronDown,
+  PanelLeftClose,
+  PanelLeftOpen,
   LogOut,
   Moon,
   Sun,
 } from 'lucide-react';
 import { useApp } from './AppContext';
 
-const Sidebar = () => {
+const Sidebar = ({ collapsed = false, onToggle }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { theme, toggleTheme } = useApp();
   const navigate = useNavigate();
@@ -64,13 +66,22 @@ const Sidebar = () => {
               src="/vrmLogo.png"
               alt="VRM Logo"
               style={{
-                width: '36px',
-                height: '36px',
+                width: '56px',
+                height: '56px',
                 objectFit: 'contain'
               }}
             />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={onToggle}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+                      </button>
+                    <div className="sidebar-brand-text" style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.15 }}>
               VRM
             </span>
@@ -90,6 +101,7 @@ const Sidebar = () => {
                 isActive ? 'nav-link active' : 'nav-link'
               }
               end={item.path === '/app'}
+              title={collapsed ? item.label : undefined}
             >
               {item.icon}
               <span>{item.label}</span>

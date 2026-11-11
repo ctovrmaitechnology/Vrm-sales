@@ -4,7 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { getAllLeads, getManualLeadsController, createManualLeadController, updateManualLeadController, deleteManualLeadController, updateLeadCallStatus, getWhatsAppLeads, getEmailLeads, updateStatus, deleteLead, uploadLeads, uploadSingleLead, sendLeadTemplate, importManualLeads } = require('../controllers/leadController');
-
+const { updateLeadStatusFollowup, getLeadFollowups } = require('../controllers/leadController');
 const uploadDir = path.join(__dirname, '../uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({ dest: uploadDir });
@@ -30,6 +30,8 @@ router.post('/manual-leads/import', handleImportUpload, importManualLeads);
 router.get('/manual-leads', getManualLeadsController);
 router.post('/manual-leads', createManualLeadController);
 router.put('/manual-leads/:id', updateManualLeadController);
+router.patch('/manual-leads/:id/status-followup', updateLeadStatusFollowup);
+router.get('/lead-followups', getLeadFollowups);
 router.patch('/manual-leads/:id/call-status', updateLeadCallStatus);
 router.delete('/manual-leads/:id', deleteManualLeadController);
 router.get('/ingestion/whatsapp', getWhatsAppLeads);

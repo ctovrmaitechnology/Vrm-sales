@@ -1019,6 +1019,107 @@ async function deleteManualLeadController(req, res) {
     return res.status(500).json({ error: 'Failed to update call status.' });
   }
 }
+const LEAD_STATUS_VALUES = ['interested', 'not_interested', 'converted'];
+
+function todayInIndia() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+async function updateLeadStatusFollowup(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return res.status(400).json({ error: 'Invalid lead ID.' });
+  }
+  const body = req.body || {};
+  const data = { updated_at: new Date() };
+
+  try {
+    const existing = await prisma.leads.findUnique({
+      where: { id },
+      select: { id: true, converted_at: true },
+    });
+    if (!existing) return res.status(404).json({ error: 'Lead not found.' });
+
+    if ('lead_status' in body) {
+      const value = body.lead_status ? String(body.lead_status) : null;
+      if (value && !LEAD_STATUS_VALUES.includes(value)) {
+        return res.status(400).json({ error: 'Status must be interested, not_interested or converted.' });
+      }
+      data.lead_status = value;
+      data.converted_at = value === 'converted' ? (existing.converted_at || new Date()) : null;
+    }
+
+    if ('followup_date' in body) {
+      if (!body.followup_date) {
+        data.followup_date = null;
+        data.followup_note = null;
+        data.followup_set_at = null;
+      } else {
+        const text = String(body.followup_date);
+        const parsed = new Date(`${text}T00:00:00.000Z`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(parsed.getTime())) {
+          return res.status(400).json({ error: 'Follow-up date must be a valid date.' });
+        }
+        data.followup_date = parsed;
+        data.followup_note = typeof body.followup_note === 'string'
+          ? body.followup_note.trim().slice(0, 1000) || null
+          : null;
+        data.followup_set_at = new Date();
+      }
+    }
+
+    const updated = await prisma.leads.update({
+      where: { id },
+      data,
+      select: { id: true, lead_status: true, converted_at: true, followup_date: true, followup_note: true },
+    });
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error('Failed to update lead status/follow-up:', err.message);
+    return res.status(500).json({ error: 'Failed to save.' });
+  }
+}
+
+async function getLeadFollowups(req, res) {
+  try {
+    const today = todayInIndia();
+    const rows = await prisma.leads.findMany({
+      where: {
+        followup_date: { gte: new Date(`${today}T00:00:00.000Z`) },
+        OR: [{ lead_status: null }, { lead_status: { not: 'converted' } }],
+      },
+      orderBy: [{ followup_date: 'asc' }, { followup_set_at: 'asc' }],
+      take: 300,
+      select: {
+        id: true,
+        full_name: true,
+        company_name: true,
+        phone_number: true,
+        whatsapp_number: true,
+        followup_date: true,
+        followup_note: true,
+        lead_status: true,
+        owner: { select: { employee_name: true } },
+      },
+    });
+    return res.json({
+      today,
+      data: rows.map((row) => ({
+        id: row.id,
+        name: row.full_name,
+        company: row.company_name,
+        phone: row.phone_number || row.whatsapp_number || null,
+        followupDate: row.followup_date.toISOString().slice(0, 10),
+        note: row.followup_note,
+        status: row.lead_status,
+        assignedTo: row.owner?.employee_name || null,
+      })),
+    });
+  } catch (err) {
+    console.error('Failed to load follow-ups:', err.message);
+    return res.status(500).json({ error: 'Failed to load follow-ups.' });
+  }
+}
 module.exports = {
   getAllLeads,
   sendLeadTemplate,
@@ -1033,5 +1134,9 @@ module.exports = {
   updateStatus,
   deleteLead,
   uploadLeads,
+    updateLeadStatusFollowup,
+  getLeadFollowups,
   uploadSingleLead
 };
+module.exports.updateLeadStatusFollowup = updateLeadStatusFollowup;
+module.exports.getLeadFollowups = getLeadFollowups;
