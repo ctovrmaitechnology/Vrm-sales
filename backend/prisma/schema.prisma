@@ -52,6 +52,12 @@ model leads {
   is_called         Boolean         @default(false)
   called_by_user_id Int?
   called_at         DateTime?       @db.Timestamptz(6)
+  
+    lead_status       String?
+  converted_at      DateTime?       @db.Timestamptz(6)
+  followup_date     DateTime?       @db.Date
+  followup_note     String?
+  followup_set_at   DateTime?       @db.Timestamptz(6)
   owner             users?          @relation("OwnedLeads", fields: [user_id], references: [id], onDelete: SetNull)
   called_by         users?          @relation("CalledLeads", fields: [called_by_user_id], references: [id], onDelete: SetNull)
   email_history     email_history[]
@@ -133,6 +139,16 @@ model users {
   called_leads  leads[]         @relation("CalledLeads")
   companies     company[]       @relation("CompanyOwner")
   email_history email_history[]
+    team_id       Int?
+  team          teams?          @relation(fields: [team_id], references: [id], onDelete: SetNull)
+  
+}
+model teams {
+  id         Int       @id @default(autoincrement())
+  name       String
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @db.Timestamptz(6)
+  members    users[]
 }
 
 model email_history {

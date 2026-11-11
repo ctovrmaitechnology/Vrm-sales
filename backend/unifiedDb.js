@@ -476,6 +476,10 @@ async function getManualLeads() {
       user_id: true,
       is_called: true,
       called_by_user_id: true,
+            lead_status: true,
+      converted_at: true,
+      followup_date: true,
+      followup_note: true,
       owner: { select: { employee_name: true } },
       called_by: { select: { employee_name: true } }
     }

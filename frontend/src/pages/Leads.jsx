@@ -27,6 +27,7 @@ import TableFilters from '../components/TableFilters';
 import useTableFilters from '../hooks/useTableFilters';
 import useTablePagination from '../hooks/useTablePagination';
 import CategoryDropdown from '../components/CategoryDropdown';
+import FollowupBell from '../components/FollowupBell';
 import '../styles/leads.css';
 import '../styles/whatsapp.css';
 
@@ -119,7 +120,36 @@ const formatDateTime = (value) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '-' : DATE_TIME_FORMATTER.format(date);
 };
-
+const LEAD_STATUS_OPTIONS = [
+  { value: 'interested', label: 'Interested' },
+  { value: 'not_interested', label: 'Not interested' },
+  { value: 'converted', label: 'Converted' },
+];
+const LEAD_STATUS_STYLES = {
+  '': { background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1' },
+  interested: { background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' },
+  not_interested: { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' },
+  converted: { background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' },
+};
+const todayIST = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+const formatFollowupDate = (iso) => {
+  if (!iso) return '';
+  const [y, m, d] = String(iso).slice(0, 10).split('-');
+  return `${d}/${m}/${String(y).slice(2)}`;
+};
+const getFollowupTone = (iso) => {
+  if (!iso) return 'none';
+  const day = String(iso).slice(0, 10);
+  const today = todayIST();
+  if (day === today) return 'today';
+  return day > today ? 'upcoming' : 'past';
+};
+const FOLLOWUP_TONES = {
+  none: { background: '#f8fafc', color: '#2563eb', border: '1px dashed #93c5fd' },
+  upcoming: { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' },
+  today: { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' },
+  past: { background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' },
+};
 const Leads = () => {
   const queryClient = useQueryClient();
   const manualLeadsQuery = useQuery({
@@ -337,7 +367,71 @@ const Leads = () => {
       setError(err.message);
     }
   };
+    const [followupLead, setFollowupLead] = useState(null);
+  const [followupDate, setFollowupDate] = useState('');
+  const [followupNote, setFollowupNote] = useState('');
+  const [followupSaving, setFollowupSaving] = useState(false);
+  const [followupError, setFollowupError] = useState('');
+  const [statusSavingId, setStatusSavingId] = useState(null);
 
+  const patchStatusFollowup = async (id, payload) => {
+    const response = await fetch(apiUrl(`/api/manual-leads/${id}/status-followup`), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.error || 'Failed to save.');
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['manual-leads'] }),
+      queryClient.invalidateQueries({ queryKey: ['lead-followups'] }),
+    ]);
+  };
+
+  const changeLeadStatus = async (item, value) => {
+    setStatusSavingId(item.id);
+    try {
+      await patchStatusFollowup(item.id, { lead_status: value || null });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setStatusSavingId(null);
+    }
+  };
+
+  const openFollowup = (item) => {
+    setFollowupLead(item);
+    setFollowupDate(item.followup_date ? String(item.followup_date).slice(0, 10) : '');
+    setFollowupNote(item.followup_note || '');
+    setFollowupError('');
+  };
+  const closeFollowup = () => { setFollowupLead(null); setFollowupError(''); };
+
+  const saveFollowup = async () => {
+    if (!followupDate) { setFollowupError('Please pick a follow-up date.'); return; }
+    setFollowupSaving(true);
+    setFollowupError('');
+    try {
+      await patchStatusFollowup(followupLead.id, { followup_date: followupDate, followup_note: followupNote });
+      closeFollowup();
+    } catch (err) {
+      setFollowupError(err.message);
+    } finally {
+      setFollowupSaving(false);
+    }
+  };
+  const clearFollowup = async () => {
+    setFollowupSaving(true);
+    setFollowupError('');
+    try {
+      await patchStatusFollowup(followupLead.id, { followup_date: null });
+      closeFollowup();
+    } catch (err) {
+      setFollowupError(err.message);
+    } finally {
+      setFollowupSaving(false);
+    }
+  };
   const handleSort = (field) => {
     if (sortField === field) {
       setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -448,11 +542,14 @@ const Leads = () => {
 
   return (
     <div className="leads-page-container">
-      <div className="flex items-center justify-between mb-6" style={{ flexWrap: 'wrap', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', marginBottom: '0.75rem' }}>
         <div>
           <h1 className="page-title">Leads</h1>
           <p className="page-subtitle">Manage manually added leads</p>
         </div>
+        <FollowupBell />
+      </div>
+      <div className="flex items-center justify-between mb-6" style={{ flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <ExcelImportControls
             entity="lead"
@@ -718,7 +815,7 @@ const Leads = () => {
       {/* 3. Floating Card Table matching WhatsApp Campaign UI */}
       <div className="wa-table-container-wrapper" style={{ minWidth: 0, marginTop: 0 }}>
         <div className="wa-cards-table-container">
-          <table className="wa-cards-table">
+          <table className="wa-cards-table" style={{ minWidth: '1700px' }}>
             <thead>
               <tr>
                 <th style={{ width: '36px', textAlign: 'center', paddingLeft: '0.65rem' }}>
@@ -729,31 +826,38 @@ const Leads = () => {
                     onChange={toggleSelectAll}
                   />
                 </th>
-                <th style={{ width: '13%' }} className="leads-th-sortable" onClick={() => handleSort('full_name')}>
+                <th style={{ width: '11%' }} className="leads-th-sortable" onClick={() => handleSort('full_name')}>
                   <span className="wa-th-content">NAME <span className="wa-sort-arrows">{sortField === 'full_name' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
-                <th style={{ width: '11%' }} className="leads-th-sortable" onClick={() => handleSort('company_name')}>
+                <th style={{ width: '9%' }} className="leads-th-sortable" onClick={() => handleSort('company_name')}>
                   <span className="wa-th-content">COMPANY <span className="wa-sort-arrows">{sortField === 'company_name' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
-                <th style={{ width: '20%' }} className="leads-th-sortable" onClick={() => handleSort('email')}>
+                <th style={{ width: '13%' }} className="leads-th-sortable" onClick={() => handleSort('email')}>
                   <span className="wa-th-content">EMAIL <span className="wa-sort-arrows">{sortField === 'email' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
-                <th style={{ width: '15%' }} className="leads-th-sortable" onClick={() => handleSort('phone_number')}>
+                <th style={{ width: '11%' }} className="leads-th-sortable" onClick={() => handleSort('phone_number')}>
                   <span className="wa-th-content">PHONE NUMBER <span className="wa-sort-arrows">{sortField === 'phone_number' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
-                <th style={{ width: '10%' }} className="leads-th-sortable" onClick={() => handleSort('source')}>
+                <th style={{ width: '6%' }} className="leads-th-sortable" onClick={() => handleSort('source')}>
                   <span className="wa-th-content">SOURCE <span className="wa-sort-arrows">{sortField === 'source' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
-                <th style={{ width: '10%' }} className="leads-th-sortable" onClick={() => handleSort('owner')}>
+                <th style={{ width: '7%' }} className="leads-th-sortable" onClick={() => handleSort('owner')}>
                   <span className="wa-th-content">ASSIGNED USER <span className="wa-sort-arrows">{sortField === 'owner' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
-                <th style={{ width: '14%', minWidth: '170px' }}>
+
+                <th style={{ width: '10%', minWidth: '170px' }}>
                   <span className="wa-th-content">CALLED STATUS</span>
                 </th>
-                <th style={{ width: '10%' }} className="leads-th-sortable" onClick={() => handleSort('created_at')}>
+                   <th style={{ width: '8%', minWidth: '140px' }}>
+                  <span className="wa-th-content">STATUS</span>
+                </th>
+                <th style={{ width: '8%', minWidth: '120px' }}>
+                  <span className="wa-th-content">FOLLOW-UP</span>
+                </th>
+                <th style={{ width: '7%' }} className="leads-th-sortable" onClick={() => handleSort('created_at')}>
                   <span className="wa-th-content">ADDED <span className="wa-sort-arrows">{sortField === 'created_at' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
-                <th style={{ width: '14%', minWidth: '125px', textAlign: 'center', paddingRight: '0.75rem' }}>
+                <th style={{ width: '8%', minWidth: '125px', textAlign: 'center', paddingRight: '0.75rem' }}>
                   <span className="wa-th-content" style={{ justifyContent: 'center' }}>ACTIONS</span>
                 </th>
               </tr>
@@ -761,13 +865,13 @@ const Leads = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="10" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8', background: '#ffffff', borderRadius: '14px' }}>
+                  <td colSpan="12" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8', background: '#ffffff', borderRadius: '14px' }}>
                     Loading leads...
                   </td>
                 </tr>
               ) : error || manualLeadsQuery.error || usersQuery.error ? (
                 <tr>
-                  <td colSpan="10" role="alert" style={{ textAlign: 'center', color: '#b91c1c', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
+                  <td colSpan="12" role="alert" style={{ textAlign: 'center', color: '#b91c1c', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
                     {error || manualLeadsQuery.error?.message || usersQuery.error?.message}
                   </td>
                 </tr>
@@ -890,7 +994,38 @@ const Leads = () => {
                           )}
                         </div>
                       </td>
+                      {/* LEAD STATUS */}
+                      <td style={{ padding: '0.5rem 0.6rem' }}>
+                        <select
+                          value={item.lead_status || ''}
+                          disabled={statusSavingId === item.id}
+                          onChange={(e) => changeLeadStatus(item, e.target.value)}
+                          style={{ fontSize: '0.76rem', fontWeight: 600, borderRadius: '7px', padding: '3px 6px', maxWidth: '130px', cursor: 'pointer', ...(LEAD_STATUS_STYLES[item.lead_status || ''] || LEAD_STATUS_STYLES['']) }}
+                        >
+                          <option value="">Select status</option>
+                          {LEAD_STATUS_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </td>
 
+                      {/* FOLLOW-UP */}
+                      <td style={{ padding: '0.5rem 0.6rem' }}>
+                        {(() => {
+                          const tone = getFollowupTone(item.followup_date);
+                          const label = tone === 'none' ? 'Add follow-up' : tone === 'today' ? 'Today' : formatFollowupDate(item.followup_date);
+                          return (
+                            <button
+                              type="button"
+                              title={item.followup_note || ''}
+                              onClick={() => openFollowup(item)}
+                              style={{ fontSize: '0.76rem', fontWeight: 600, padding: '3px 10px', borderRadius: '7px', cursor: 'pointer', whiteSpace: 'nowrap', ...FOLLOWUP_TONES[tone] }}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })()}
+                      </td>
                       {/* ADDED */}
                       <td style={{ whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
@@ -975,7 +1110,7 @@ const Leads = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan="10" style={{ textAlign: 'center', color: '#64748b', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
+                  <td colSpan="12" style={{ textAlign: 'center', color: '#64748b', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
                     {searchTerm || leadTableFilters.hasFilters || calledFilter ? (
                       <div>
                         <p style={{ margin: 0, fontWeight: 500 }}>No leads match the selected filters.</p>
@@ -1596,7 +1731,50 @@ const Leads = () => {
           </div>
         </div>
       )}
-
+              {/* Follow-up Modal */}
+      {followupLead && (
+        <div
+          onClick={closeFollowup}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: '14px', padding: '1.25rem', width: '100%', maxWidth: '420px', boxShadow: '0 20px 50px rgba(15,23,42,0.3)' }}
+          >
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Follow-up</h2>
+            <p style={{ margin: '0.15rem 0 1rem', color: '#64748b', fontSize: '0.85rem' }}>{followupLead.full_name}</p>
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Follow-up date</label>
+            <input
+              type="date"
+              value={followupDate}
+              min={todayIST()}
+              onChange={(e) => setFollowupDate(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '0.85rem' }}
+            />
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Notes</label>
+            <textarea
+              value={followupNote}
+              maxLength={1000}
+              rows={4}
+              placeholder="e.g. Client asked to call at 5:30 PM, or to send details on WhatsApp"
+              onChange={(e) => setFollowupNote(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', resize: 'vertical' }}
+            />
+            {followupError && <p role="alert" style={{ color: '#b91c1c', fontSize: '0.8rem', margin: '0.5rem 0 0' }}>{followupError}</p>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', marginTop: '1rem' }}>
+              <div>
+                {followupLead.followup_date && (
+                  <button type="button" disabled={followupSaving} onClick={clearFollowup} style={{ padding: '0.45rem 0.9rem', borderRadius: '8px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 600, cursor: 'pointer' }}>Clear</button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button type="button" onClick={closeFollowup} style={{ padding: '0.45rem 0.9rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                <button type="button" disabled={followupSaving} onClick={saveFollowup} style={{ padding: '0.45rem 0.9rem', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>{followupSaving ? 'Saving…' : 'Save'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Delete Confirmation Modal */}
       {deleteModalOpen && (
         <div style={{

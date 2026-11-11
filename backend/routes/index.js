@@ -13,6 +13,7 @@ const categoryRoutes = require('./categoryRoutes');
 const insightsRoutes = require('./insightsRoutes');
 const callRoutes = require('./callRoutes');
 const RocketReachroutes = require('./RocketReachroutes');
+const teamRoutes = require('./teamRoutes')
 router.use('/', emailRoutes);
 router.use('/', leadRoutes);
 router.use('/', trackingRoutes);
@@ -25,4 +26,5 @@ router.use('/whatsapp', whatsappRoutes);
 router.use('/insights', insightsRoutes);
 router.use('/calls', callRoutes);
 router.use('/rocketreach', RocketReachroutes);
+router.use('/teams', teamRoutes);
 module.exports = router;

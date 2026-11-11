@@ -650,7 +650,7 @@ const WhatsApp = () => {
                   }}
                 />
               </th>
-              <th style={{ width: '12%' }}>
+              <th style={{ width: '16%' }}>
                 <span className="wa-th-content">Name <span className="wa-sort-arrows">↑↓</span></span>
               </th>
               <th style={{ width: '5.5%' }}>
@@ -659,16 +659,16 @@ const WhatsApp = () => {
               <th style={{ width: '9.5%' }}>
                 <span className="wa-th-content">Assigned User <span className="wa-sort-arrows">↑↓</span></span>
               </th>
-              <th style={{ width: '12.5%' }}>
+              <th style={{ width: '18%' }}>
                 <span className="wa-th-content">Phone Number <span className="wa-sort-arrows">↑↓</span></span>
               </th>
               <th style={{ width: '11%' }}>
                 <span className="wa-th-content">Sent Status <span className="wa-sort-arrows">↑↓</span></span>
               </th>
-              <th style={{ width: '12%', textAlign: 'center' }}>
+              <th style={{ width: '10%', textAlign: 'center' }}>
                 <span className="wa-th-content" style={{ justifyContent: 'center' }}>Clicks</span>
               </th>
-              <th style={{ width: '21%' }}>
+              <th style={{ width: '12%' }}>
                 <span className="wa-th-content">Template Delivery Status <span className="wa-sort-arrows">↑↓</span></span>
               </th>
               <th style={{ width: '7.5%', textAlign: 'center' }}>
@@ -746,7 +746,7 @@ const WhatsApp = () => {
                       )}
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.15rem 0.35rem' }}>
                         <span className="wa-phone-wa-icon" title="WhatsApp Contact">
                           <MessageCircle size={13} color="#22c55e" fill="#dcfce7" strokeWidth={2.2} />
                         </span>
