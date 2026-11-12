@@ -5,12 +5,11 @@ const campaigns = {
     subject: 'AI-Powered Hiring and Bench Management Solutions from VRM AI Technology',
     email: `Dear Sir/Madam,
 
-I am writing on behalf of VRM AI Technology, a Bengaluru-based AI development company specialising in Generative AI systems, conversational voice agents, and custom machine learning software for enterprise clients.
+I am writing on behalf of VRM AI Technology, an AI-based product development company that builds AI-powered software products and solutions for businesses.
 
 We have recently launched two products designed for talent operations, both currently deployed with enterprise clients:
 
-1. Workflow AI
-An end-to-end hiring automation platform covering resume screening, AI-led voice interviews, video assessments, and proctored coding tests. Your team is involved only at the final decision stage.
+1. Workflow AI – An AI-powered recruitment automation platform that streamlines hiring through intelligent resume screening, AI-powered video interviews, coding assessments, telephonic interview automation, candidate evaluations, and end-to-end recruitment workflow management.
 
 2. Bench to Deploy
 A platform that matches unassigned bench employees to open client requirements, creates personalised upskilling roadmaps, and validates technical readiness before any profile is submitted.
@@ -25,6 +24,8 @@ Bench to Deploy: https://drive.google.com/file/d/1xtNqQX7qHogouW1wLUAz1dLt2o7N-K
 Should either solution be relevant to your team's requirements, we would be pleased to arrange a tailored walkthrough.
 
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
+
+Additionally, if you know another organisation that could benefit from our SaaS solutions, we'd be happy to offer you a 5% recurring referral commission when they subscribe to our platform.
 
 Thank you for your time and consideration.
 
@@ -110,16 +111,16 @@ VRM AI Technology (OPC) Pvt. Ltd.`
     subject: 'Automate Your Hiring Pipeline with Workflow AI',
     email: `Dear Hiring Team,
 
-I am writing on behalf of VRM AI Technology, a Bengaluru-based AI development company specialising in Generative AI systems, conversational voice agents, and custom machine learning software for enterprise clients.
+I am writing on behalf of VRM AI Technology, an AI-based product development company that builds AI-powered software products and solutions for businesses.
 
 One of our recent products is Workflow AI, an enterprise hiring automation platform that handles the entire screening pipeline without manual effort.
 
 Key capabilities:
 
-Resume screening: scores and ranks candidates against your job description in seconds
-AI voice calls: screens candidates and delivers structured hiring notes
-Async video interviews: evaluates communication, confidence, and role fit
-Automated coding assessments: includes anti-cheat proctoring
+Resume screening: Scores and ranks candidates against your job description in seconds.
+AI voice calls: Screens candidates and delivers structured hiring notes.
+Async video interviews: Evaluates communication, confidence, and role fit.
+Automated coding assessments: Includes anti-cheat proctoring.
 
 Your team is involved only at the final shortlist stage.
 
@@ -128,6 +129,8 @@ Workflow AI Demo: https://drive.google.com/file/d/1aCEqwMIpUgY1NXAoTQqCbJIwqPutk
 
 We would be pleased to walk you through how it fits your current hiring workflow.
 Book a 15-min call: https://vrmaitechnology.com/contactus/#send-message-section
+
+Additionally, if you know another organisation that could benefit from our SaaS solutions, we'd be happy to offer you a 5% recurring referral commission when they subscribe to our platform.
 
 Thank you for your time and consideration.
 
@@ -205,17 +208,17 @@ VRM AI Technology (OPC) Pvt. Ltd.`
     subject: 'AI Buddy: An AI Language Coach for Your Team\'s Learning and Development',
     email: `Dear Learning and Development Team,
 
-I am writing on behalf of VRM AI Technology, a Bengaluru-based AI development company specialising in Generative AI systems, conversational voice agents, and custom machine learning software for enterprise clients.
+I am writing on behalf of VRM AI Technology, an AI-based product development company that builds AI-powered software products and solutions for businesses.
 
 One of our recent products is AI Buddy, an intelligent AI language coach that helps employees learn, practise, and communicate fluently across multiple languages, right from their device.
 
 Key capabilities:
 
-Voice conversations: natural dialogue and interactive speaking simulations
-Real-time feedback: pronunciation, accent, and grammar
-Personalised learning tracks: tailored to each employee's role and level
-Corporate upskilling curricula: designed around your team's specific needs
-Enterprise analytics: track fluency progression across the team
+Voice conversations: Natural dialogue and interactive speaking simulations.
+Real-time feedback: Pronunciation, accent, and grammar.
+Personalised learning tracks: Tailored to each employee's role and level.
+Corporate upskilling curricula: Designed around your team's specific needs.
+Enterprise analytics: Track fluency progression across the team.
 
 There is no classroom and no fixed schedule. Employees practise at their own pace and receive coaching in real time.
 
@@ -224,6 +227,8 @@ AI Buddy Demo: https://drive.google.com/file/d/1z4URqyc3_lAuTFmtHDyrakv54mUySSsG
 
 We would be pleased to walk you through how it fits into your team's learning and development workflow.
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
+
+Additionally, if you know another organisation that could benefit from our SaaS solutions, we'd be happy to offer you a 5% recurring referral commission when they subscribe to our platform.
 
 Thank you for your time and consideration.
 

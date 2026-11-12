@@ -6,7 +6,8 @@ const { sendFollowUp1, sendFollowUp2, sendFollowUp3 } = require('./emailService'
 let lastFollowUpDbWarningAt = 0;
 
 async function runFollowUpEmailCheck() {
-  console.log("Checking follow-up emails...");
+  console.log("Email follow-ups are disabled. Skipping.");
+  return { success: true, skipped: true, reason: "email_followups_disabled" };
 
   try {
     try {
