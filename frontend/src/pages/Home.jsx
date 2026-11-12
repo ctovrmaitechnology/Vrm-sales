@@ -25,7 +25,7 @@ import Button from '../components/Button';
 import TablePagination from '../components/TablePagination';
 import TableFilters from '../components/TableFilters';
 import useTableFilters from '../hooks/useTableFilters';
-import { hasSentWhatsAppTemplate } from '../utils/whatsappstatus';
+import { hasSentWhatsAppTemplate } from '../utils/whatsappStatus';
 import useTablePagination from '../hooks/useTablePagination';
 import HeaderUserMenu from '../components/HeaderUserMenu';
 import '../styles/overview.css';
