@@ -25,6 +25,7 @@ import Button from '../components/Button';
 import TablePagination from '../components/TablePagination';
 import TableFilters from '../components/TableFilters';
 import useTableFilters from '../hooks/useTableFilters';
+import { hasSentWhatsAppTemplate } from '../utils/whatsappstatus';
 import useTablePagination from '../hooks/useTablePagination';
 import HeaderUserMenu from '../components/HeaderUserMenu';
 import '../styles/overview.css';
@@ -106,20 +107,21 @@ const Home = () => {
     },
   });
 
-  const whatsappLeadsQuery = useQuery({
+    const whatsappLeadsQuery = useQuery({
     queryKey: ['whatsapp-leads'],
     queryFn: async () => {
-      const response = await fetch(apiUrl('/api/whatsapp/leads'));
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || 'Failed to load WhatsApp leads.');
-      return Array.isArray(data.leads) ? data.leads : [];
+      const response = await fetch(apiUrl('/api/ingestion/whatsapp'));
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to load WhatsApp leads.');
+      if (!Array.isArray(data)) throw new Error('The WhatsApp leads API returned an invalid response.');
+      return data;
     },
+    staleTime: 5000,
   });
 
   const stats = statsQuery.data || { totalLeads: 0, totalCompanies: 0, totalEmailsSent: 0, totalUsers: 0, users: [] };
   const whatsappLeads = whatsappLeadsQuery.data || [];
-  const whatsappSentCount = whatsappLeads.filter((l) => (l.status || '').toLowerCase() === 'sent').length;
-
+  const whatsappSentCount = whatsappLeads.filter(hasSentWhatsAppTemplate).length;
   const searchQueryResult = useQuery({
     queryKey: ['universal-search', debouncedSearchQuery],
     queryFn: async () => {

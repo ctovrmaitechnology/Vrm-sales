@@ -175,7 +175,7 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     }),
     prisma.leads.findMany({
       where: { is_called: true, called_by_user_id: { not: null }, called_at: { lte: rangeEnd } },
-      select: { called_by_user_id: true, called_at: true },
+         select: { called_by_user_id: true, called_at: true, lead_status: true },
     }),
   ]);
 
@@ -197,12 +197,12 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     const p = people.get(l.user_id); if (!p) continue;
     p.leadsAll++;
     if (inDay(l.created_at)) p.leadsDay++;
-    if (['interested', 'not_interested', 'converted'].includes(l.lead_status)) p[l.lead_status]++;
   }
   for (const c of calls) {
     const p = people.get(c.called_by_user_id); if (!p) continue;
     p.callsAll++;
     if (inDay(c.called_at)) p.callsDay++;
+    if (['interested', 'not_interested', 'converted'].includes(c.lead_status)) p[c.lead_status]++;
   }
 
   const totalOf = (list) => keys.map((k) => list.reduce((n, x) => n + x[k], 0));

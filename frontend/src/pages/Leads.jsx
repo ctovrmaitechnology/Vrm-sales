@@ -314,6 +314,7 @@ const Leads = () => {
     dateField: 'created_at',
   });
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [sortField, setSortField] = useState('created_at');
   const [sortOrder, setSortOrder] = useState('desc'); // 'asc' | 'desc'
 
@@ -367,7 +368,7 @@ const Leads = () => {
       setError(err.message);
     }
   };
-    const [followupLead, setFollowupLead] = useState(null);
+  const [followupLead, setFollowupLead] = useState(null);
   const [followupDate, setFollowupDate] = useState('');
   const [followupNote, setFollowupNote] = useState('');
   const [followupSaving, setFollowupSaving] = useState(false);
@@ -532,6 +533,36 @@ const Leads = () => {
   };
 
   const totalResults = filteredLeads.length;
+  const handleBulkDelete = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} selected lead${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch(apiUrl('/api/manual-leads/bulk-delete'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to delete selected leads.');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['manual-leads'] }),
+        queryClient.invalidateQueries({ queryKey: ['email-leads'] }),
+        queryClient.invalidateQueries({ queryKey: ['whatsapp-leads'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['global-search'] }),
+      ]);
+      setSelectedIds(new Set());
+      setNotice(`${data?.deleted ?? ids.length} lead${ids.length === 1 ? '' : 's'} deleted successfully.`);
+    } catch (bulkError) {
+      setError(bulkError.message);
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
   const startIndex = totalResults === 0 ? 0 : (leadPagination.page - 1) * leadPagination.pageSize + 1;
   const endIndex = Math.min(leadPagination.page * leadPagination.pageSize, totalResults);
   const totalPages = Math.max(1, Math.ceil(totalResults / leadPagination.pageSize));
@@ -795,23 +826,33 @@ const Leads = () => {
             <CheckSquare size={16} />
             <span>{selectedIds.size} lead{selectedIds.size === 1 ? '' : 's'} selected</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setSelectedIds(new Set())}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#64748b',
-              fontSize: '0.82rem',
-              cursor: 'pointer',
-              textDecoration: 'underline',
-            }}
-          >
-            Deselect all
-          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.82rem', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Deselect all
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                padding: '0.35rem 0.8rem', borderRadius: '8px',
+                border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626',
+                fontSize: '0.82rem', fontWeight: 600,
+                cursor: bulkDeleting ? 'not-allowed' : 'pointer',
+                opacity: bulkDeleting ? 0.6 : 1,
+              }}
+            >
+              <Trash2 size={14} /> {bulkDeleting ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
         </div>
       )}
-
       {/* 3. Floating Card Table matching WhatsApp Campaign UI */}
       <div className="wa-table-container-wrapper" style={{ minWidth: 0, marginTop: 0 }}>
         <div className="wa-cards-table-container">
@@ -826,6 +867,7 @@ const Leads = () => {
                     onChange={toggleSelectAll}
                   />
                 </th>
+                <th style={{ width: '48px', textAlign: 'center' }}>S.NO</th>
                 <th style={{ width: '11%' }} className="leads-th-sortable" onClick={() => handleSort('full_name')}>
                   <span className="wa-th-content">NAME <span className="wa-sort-arrows">{sortField === 'full_name' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
@@ -848,7 +890,7 @@ const Leads = () => {
                 <th style={{ width: '10%', minWidth: '170px' }}>
                   <span className="wa-th-content">CALLED STATUS</span>
                 </th>
-                   <th style={{ width: '8%', minWidth: '140px' }}>
+                <th style={{ width: '8%', minWidth: '140px' }}>
                   <span className="wa-th-content">STATUS</span>
                 </th>
                 <th style={{ width: '8%', minWidth: '120px' }}>
@@ -865,13 +907,13 @@ const Leads = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="12" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8', background: '#ffffff', borderRadius: '14px' }}>
+                  <td colSpan="13" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8', background: '#ffffff', borderRadius: '14px' }}>
                     Loading leads...
                   </td>
                 </tr>
               ) : error || manualLeadsQuery.error || usersQuery.error ? (
                 <tr>
-                  <td colSpan="12" role="alert" style={{ textAlign: 'center', color: '#b91c1c', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
+                  <td colSpan="13" role="alert" style={{ textAlign: 'center', color: '#b91c1c', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
                     {error || manualLeadsQuery.error?.message || usersQuery.error?.message}
                   </td>
                 </tr>
@@ -896,7 +938,9 @@ const Leads = () => {
                           onChange={() => toggleSelectOne(item.id)}
                         />
                       </td>
-
+                      <td style={{ textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: '0.84rem' }}>
+                        {startIndex + idx}
+                      </td>
                       {/* NAME */}
                       <td>
                         <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.86rem' }}>
@@ -1110,7 +1154,7 @@ const Leads = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan="12" style={{ textAlign: 'center', color: '#64748b', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
+                  <td colSpan="13" style={{ textAlign: 'center', color: '#64748b', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
                     {searchTerm || leadTableFilters.hasFilters || calledFilter ? (
                       <div>
                         <p style={{ margin: 0, fontWeight: 500 }}>No leads match the selected filters.</p>
@@ -1731,7 +1775,7 @@ const Leads = () => {
           </div>
         </div>
       )}
-              {/* Follow-up Modal */}
+      {/* Follow-up Modal */}
       {followupLead && (
         <div
           onClick={closeFollowup}
