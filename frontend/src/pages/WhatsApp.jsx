@@ -118,6 +118,8 @@ const hasUnsentWhatsAppTemplate = (lead) => {
     })
     : !hasSentWhatsAppTemplate(lead);
 };
+const getFailedTemplateNames = (lead) =>
+     getCurrentTemplateStatuses(lead).filter(i => i.status === 'failed').map(i => i.templateName);
 
 const WhatsApp = () => {
   const queryClient = useQueryClient();
@@ -136,6 +138,7 @@ const WhatsApp = () => {
     refetchInterval: (query) => (query.state.data && chatLeadRef.current ? 15000 : false),
   });
   const leads = leadsQuery.data || EMPTY_LIST;
+  const [partialFailedTemplate, setPartialFailedTemplate] = useState('');
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState('notsent'); // 'notsent' | 'sent'
   const whatsappFilterConfig = useMemo(() => ({
@@ -180,10 +183,16 @@ const WhatsApp = () => {
         }]
         : []),
     ],
+
     dateField: (lead) => lead.created_at || lead.createdAt,
   }), [activeTab]);
   const whatsappFilters = useTableFilters(leads, whatsappFilterConfig);
+   const isPartialFailedSelected =
+    whatsappFilters.facets.find(f => f.key === 'status')?.value === 'partially failed';
 
+  useEffect(() => {
+    if (!isPartialFailedSelected) setPartialFailedTemplate('');
+  }, [isPartialFailedSelected]);
   // Campaign Modal & State
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
   const [selectedTemplates, setSelectedTemplates] = useState(['workflow']);
@@ -377,6 +386,8 @@ const WhatsApp = () => {
 
   const filteredLeads = whatsappFilters.filteredItems.filter((lead) => {
     const search = searchTerm.trim().toLowerCase();
+      if (isPartialFailedSelected && partialFailedTemplate &&
+       !getFailedTemplateNames(lead).includes(partialFailedTemplate)) return false;
 
     if (!search) return true;
 
@@ -1315,8 +1326,8 @@ const WhatsApp = () => {
           gap: '0.85rem',
         }}
       >
-        {/* Filters */}
-        <div>
+                {/* Filters */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem' }}>
           <TableFilters
             {...whatsappFilters}
             setFromDate={undefined}
@@ -1328,9 +1339,30 @@ const WhatsApp = () => {
               setSearchTerm('');
             }}
           />
-        </div>
-      </div>
 
+          {isPartialFailedSelected && (
+            <select
+              value={partialFailedTemplate}
+              onChange={(e) => setPartialFailedTemplate(e.target.value)}
+              aria-label="Filter by failed template"
+              style={{
+                padding: '0.45rem 0.65rem',
+                border: '1px solid #3b82f6',
+                borderRadius: '8px',
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <option value="">All partially failed</option>
+              <option value="workflow_final">Workflow failed</option>
+              <option value="benchtodeploy_final">Bench to Deploy failed</option>
+            </select>
+          )}
+        </div>
+        </div>
       {/* 3. TABLE TOOLBAR (TABS ON LEFT, SEARCH & TOOLS ON RIGHT) */}
       <div className="wa-table-toolbar">
         {/* Left: Dual Pill Tabs */}

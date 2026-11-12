@@ -1019,6 +1019,31 @@ async function deleteManualLeadController(req, res) {
     return res.status(500).json({ error: 'Failed to update call status.' });
   }
 }
+async function bulkDeleteManualLeads(req, res) {
+  const ids = [...new Set((req.body?.ids || []).map(Number))].filter((n) => Number.isInteger(n) && n > 0);
+  if (!ids.length) return res.status(400).json({ error: 'No lead IDs provided.' });
+
+  try {
+    const leads = await prisma.leads.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, email: true },
+    });
+    const foundIds = leads.map((l) => l.id);
+    const emails = leads.map((l) => l.email).filter(Boolean);
+
+    await prisma.lead_status.deleteMany({ where: { lead_id: { in: foundIds } } }).catch(() => {});
+    await prisma.automation_logs.deleteMany({ where: { lead_id: { in: foundIds } } }).catch(() => {});
+    await prisma.leads.deleteMany({ where: { id: { in: foundIds } } });
+    if (emails.length) {
+      await prisma.emailLeads.deleteMany({ where: { email: { in: emails } } }).catch(() => {});
+    }
+
+    res.json({ success: true, deleted: foundIds.length });
+  } catch (err) {
+    console.error('Failed to bulk delete leads:', err.message);
+    res.status(500).json({ error: 'Failed to delete selected leads.' });
+  }
+}
 const LEAD_STATUS_VALUES = ['interested', 'not_interested', 'converted'];
 
 function todayInIndia() {
@@ -1128,6 +1153,7 @@ module.exports = {
   createManualLeadController,
   updateManualLeadController,
   deleteManualLeadController,
+  bulkDeleteManualLeads,
   updateLeadCallStatus,
   getWhatsAppLeads,
   getEmailLeads,
