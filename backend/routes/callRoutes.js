@@ -1,4 +1,6 @@
 const express = require('express');
+const { requireRole } = require('../middleware/auth');
+const adminOnly = requireRole('admin');
 const router = express.Router();
 const {
   getCallableContacts,
@@ -19,21 +21,21 @@ const {
 } = require('../controllers/callController');
 
 router.get('/contacts', getCallableContacts);
-router.post('/campaign/start', startCallCampaign);
-router.get('/campaign/status', getCallCampaignStatus);
-router.post('/campaign/cancel', cancelCallCampaign);
-router.post('/campaign/pause', pauseCallCampaign);
-router.post('/campaign/resume', resumeCallCampaign);
-router.post('/campaign/stop', stopCallCampaign);
+router.post('/campaign/start',adminOnly, startCallCampaign);
+router.get('/campaign/status', adminOnly,getCallCampaignStatus);
+router.post('/campaign/cancel', adminOnly, cancelCallCampaign);
+router.post('/campaign/pause', adminOnly, pauseCallCampaign);
+router.post('/campaign/resume', adminOnly, resumeCallCampaign);
+router.post('/campaign/stop', adminOnly, stopCallCampaign);
 router.post('/single', startSingleCall);
 router.get('/history', getCallHistory);
 router.get('/sync/:vapiCallId', syncCallStatus);
 router.post('/webhook', handleVapiWebhook);
 
 // Transfer settings
-router.get('/transfer/settings', getTransferSettings);
-router.post('/transfer/settings', saveTransferSettings);
-router.post('/transfer/apply', applyTransferToVapi);
-router.post('/transfer/remove', removeTransferFromVapi);
+router.get('/transfer/settings',adminOnly, getTransferSettings);
+router.post('/transfer/settings', adminOnly, saveTransferSettings);
+router.post('/transfer/apply', adminOnly, applyTransferToVapi);
+router.post('/transfer/remove', adminOnly, removeTransferFromVapi);
 
 module.exports = router;

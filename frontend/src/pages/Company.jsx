@@ -8,6 +8,7 @@ import useTableFilters from '../hooks/useTableFilters';
 import useTablePagination from '../hooks/useTablePagination';
 import CategoryDropdown from '../components/CategoryDropdown';
 import '../styles/whatsapp.css';
+import { isAdmin } from '../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
@@ -123,6 +124,7 @@ const ClickBadge = ({ count, label, color }) => (
 
 const Company = () => {
   const queryClient = useQueryClient();
+  const admin = isAdmin();
   const companiesQuery = useQuery({
     queryKey: ['companies'],
     queryFn: async () => {
@@ -683,6 +685,7 @@ const Company = () => {
             Refresh
           </Button>
 
+{admin && (
           <ExcelImportControls
             entity="company"
             users={users}
@@ -694,6 +697,7 @@ const Company = () => {
               queryClient.invalidateQueries({ queryKey: ['global-search'] }),
             ])}
           />
+)}
           <Button
             variant="primary"
             icon={<Plus size={16} />}
@@ -890,6 +894,7 @@ const Company = () => {
                         >
                           <Pencil size={13} />
                         </button>
+{admin && (
                         <button
                           type="button"
                           title="Delete company"
@@ -911,6 +916,7 @@ const Company = () => {
                         >
                           <Trash2 size={13} />
                         </button>
+)}
                       </div>
                     </td>
                   </tr>

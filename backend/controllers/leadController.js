@@ -4,6 +4,8 @@ const xlsx = require('xlsx');
 const { PrismaClient } = require('@prisma/client');
 const prisma = require('../prismaClient');
 const { getLeadByEmail, upsertUnifiedLead, updateLeadFields, updateUnifiedLeadStatus, getAllActiveLeads, getCompanyEmailContacts, getManualLeads, getActiveUserById, createManualLead, updateManualLead, recordEmailHistory, upsertEmailLead, upsertWhatsAppLead, syncCompanyWhatsAppLead, deleteUnifiedLead, getUnifiedLeadByIdentifier, updateEmailLeadStatus, updateUnifiedLeadEmailStatus } = require('../unifiedDb');
+const { getScopeUserIds, inScope } = require('../middleware/auth');
+const { cleanFollowUpNote } = require('../services/geminiService');
 const { findProductColumn, normalizeLeadProduct } = require('../utils/helpers');
 const { getPendingWhatsAppReplyFollowUps, getWhatsAppReplyMessageStatuses } = require('../services/whatsappReplyFollowUpService');
 const {
@@ -225,9 +227,22 @@ async function getAllLeads(req, res) {
   }
 }
 
+// Checks that the signed-in user may touch this lead. Returns the lead's owner info,
+// or sends the 404/403 response itself and returns null.
+async function authorizeLead(req, res, id) {
+  const lead = await prisma.leads.findUnique({ where: { id }, select: { id: true, user_id: true } });
+  if (!lead) { res.status(404).json({ error: 'Lead not found.' }); return null; }
+  const scope = await getScopeUserIds(req.user);
+  if (!inScope(scope, lead.user_id)) {
+    res.status(403).json({ error: 'This lead belongs to another employee.' });
+    return null;
+  }
+  return lead;
+}
+
 async function getManualLeadsController(req, res) {
   try {
-    res.json(await getManualLeads());
+    res.json(await getManualLeads(await getScopeUserIds(req.user)));
   } catch (err) {
     console.error("Failed to fetch manually added leads:", err.message);
     res.status(500).json({ error: "Failed to fetch manually added leads" });
@@ -237,7 +252,7 @@ async function getManualLeadsController(req, res) {
 async function createManualLeadController(req, res) {
   const body = req.body || {};
   const userIdValue = body.user_id;
-  const userId = userIdValue === undefined || userIdValue === '' || userIdValue === null
+  let userId = userIdValue === undefined || userIdValue === '' || userIdValue === null
     ? null
     : Number(userIdValue);
   const textFields = [
@@ -254,7 +269,6 @@ async function createManualLeadController(req, res) {
     return res.status(400).json({ error: 'Email must be text.' });
   }
   lead.email = typeof body.email === 'string' ? body.email.trim().toLowerCase() || null : null;
-  lead.user_id = userId;
   lead.status = lead.status || 'new';
   if (body.email_status !== undefined && body.email_status !== null &&
       typeof body.email_status !== 'string') {
@@ -286,6 +300,15 @@ async function createManualLeadController(req, res) {
   }
 
   try {
+    const scope = await getScopeUserIds(req.user);
+    if (scope !== null) {
+      // callers and team leads can only create leads for themselves / their team
+      if (userId === null) userId = req.user.id;
+      if (!scope.includes(userId)) {
+        return res.status(403).json({ error: "You can only assign leads to yourself or your team." });
+      }
+    }
+    lead.user_id = userId;
     if (userId !== null && !(await getActiveUserById(userId))) {
       return res.status(400).json({ error: "Selected employee was not found or is inactive." });
     }
@@ -898,7 +921,7 @@ async function updateManualLeadController(req, res) {
 
   const body = req.body || {};
   const userIdValue = body.user_id;
-  const userId = userIdValue === undefined || userIdValue === '' || userIdValue === null
+  let userId = userIdValue === undefined || userIdValue === '' || userIdValue === null
     ? null
     : Number(userIdValue);
 
@@ -919,7 +942,6 @@ async function updateManualLeadController(req, res) {
   if (body.email !== undefined) {
     lead.email = typeof body.email === 'string' ? body.email.trim().toLowerCase() || null : null;
   }
-  lead.user_id = userId;
 
   if (body.full_name !== undefined && !lead.full_name) {
     return res.status(400).json({ error: 'Full name cannot be empty.' });
@@ -944,6 +966,15 @@ async function updateManualLeadController(req, res) {
   }
 
   try {
+    if (!(await authorizeLead(req, res, id))) return;
+    const scope = await getScopeUserIds(req.user);
+    if (scope !== null) {
+      if (userId === null) userId = req.user.id;
+      if (!scope.includes(userId)) {
+        return res.status(403).json({ error: 'You can only assign leads to yourself or your team.' });
+      }
+    }
+    lead.user_id = userId;
     const updated = await updateManualLead(id, lead);
     if (!updated) return res.status(404).json({ error: 'Lead not found or not a manual lead.' });
     res.json(updated);
@@ -988,6 +1019,11 @@ async function deleteManualLeadController(req, res) {
   const nextCalled = Boolean(is_called);
   const nextCaller = called_by_user_id ? Number(called_by_user_id) : null;
   try {
+    if (!(await authorizeLead(req, res, id))) return;
+    const scope = await getScopeUserIds(req.user);
+    if (nextCaller !== null && scope !== null && !scope.includes(nextCaller)) {
+      return res.status(403).json({ error: 'You can only mark calls for yourself or your team.' });
+    }
     const existing = await prisma.leads.findUnique({
       where: { id },
       select: { is_called: true, called_by_user_id: true, called_at: true },
@@ -1050,6 +1086,8 @@ function todayInIndia() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 }
 
+const FOLLOWUP_MODES = ['email', 'call', 'whatsapp', 'meeting'];
+
 async function updateLeadStatusFollowup(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id < 1) {
@@ -1059,9 +1097,10 @@ async function updateLeadStatusFollowup(req, res) {
   const data = { updated_at: new Date() };
 
   try {
+    if (!(await authorizeLead(req, res, id))) return;
     const existing = await prisma.leads.findUnique({
       where: { id },
-      select: { id: true, converted_at: true },
+      select: { id: true, converted_at: true, interested_at: true, lead_status: true },
     });
     if (!existing) return res.status(404).json({ error: 'Lead not found.' });
 
@@ -1071,7 +1110,10 @@ async function updateLeadStatusFollowup(req, res) {
         return res.status(400).json({ error: 'Status must be interested, not_interested or converted.' });
       }
       data.lead_status = value;
+      if (value !== existing.lead_status) data.lead_status_at = value ? new Date() : null;
       data.converted_at = value === 'converted' ? (existing.converted_at || new Date()) : null;
+      // Interested starts the follow-up email schedule (day 7/15/30 from this date)
+      data.interested_at = value === 'interested' ? (existing.interested_at || new Date()) : null;
     }
 
     if ('followup_date' in body) {
@@ -1079,6 +1121,8 @@ async function updateLeadStatusFollowup(req, res) {
         data.followup_date = null;
         data.followup_note = null;
         data.followup_set_at = null;
+        data.followup_note_clean = null;
+        data.followup_mode = null;
       } else {
         const text = String(body.followup_date);
         const parsed = new Date(`${text}T00:00:00.000Z`);
@@ -1090,13 +1134,15 @@ async function updateLeadStatusFollowup(req, res) {
           ? body.followup_note.trim().slice(0, 1000) || null
           : null;
         data.followup_set_at = new Date();
+        data.followup_note_clean = data.followup_note ? await cleanFollowUpNote(data.followup_note) : null;
+        data.followup_mode = FOLLOWUP_MODES.includes(body.followup_mode) ? body.followup_mode : null;
       }
     }
 
     const updated = await prisma.leads.update({
       where: { id },
       data,
-      select: { id: true, lead_status: true, converted_at: true, followup_date: true, followup_note: true },
+      select: { id: true, lead_status: true, converted_at: true, followup_date: true, followup_note: true, followup_note_clean: true, followup_mode: true, interested_at: true },
     });
     return res.json({ success: true, data: updated });
   } catch (err) {
@@ -1108,10 +1154,12 @@ async function updateLeadStatusFollowup(req, res) {
 async function getLeadFollowups(req, res) {
   try {
     const today = todayInIndia();
+    const scope = await getScopeUserIds(req.user);
     const rows = await prisma.leads.findMany({
       where: {
         followup_date: { gte: new Date(`${today}T00:00:00.000Z`) },
         OR: [{ lead_status: null }, { lead_status: { not: 'converted' } }],
+        ...(scope && { user_id: { in: scope } }),
       },
       orderBy: [{ followup_date: 'asc' }, { followup_set_at: 'asc' }],
       take: 300,

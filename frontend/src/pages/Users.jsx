@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, RefreshCw, Download, User, Mail, Building2, Users as UsersIcon, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Download, Trash2 } from 'lucide-react';
 import Button from '../components/Button';
 import TeamsPanel from '../components/TeamsPanel';
+import { ROLE_LABELS, getUser, isAdmin } from '../utils/auth';
 import TablePagination from '../components/TablePagination';
 import TableFilters from '../components/TableFilters';
 import useTableFilters from '../hooks/useTableFilters';
@@ -39,17 +40,30 @@ const formatDateTime = (value) => {
 
 const Users = () => {
   const queryClient = useQueryClient();
+  const admin = isAdmin(); // Team Leads and Callers get a read-only view
+  const me = getUser();
+  // 'all', 'unassigned' or a team id. Only admins can switch; everyone else always gets their own team.
+  const [teamFilter, setTeamFilter] = useState('all');
   const usersQuery = useQuery({
-    queryKey: ['users'],
+    queryKey: ['team-report', admin ? teamFilter : 'own'],
     queryFn: async () => {
-      const response = await fetch(apiUrl('/api/users'));
+      const params = new URLSearchParams();
+      if (admin && teamFilter !== 'all') params.set('team_id', teamFilter);
+      const response = await fetch(apiUrl(`/api/users/team-report?${params.toString()}`));
       const result = await response.json().catch(() => null);
       if (!response.ok) throw new Error(result?.error || 'Failed to load employees.');
-      if (!Array.isArray(result?.data)) throw new Error('The employees API returned an invalid response.');
+      if (!Array.isArray(result?.data?.rows)) throw new Error('The team report API returned an invalid response.');
       return result.data;
     },
   });
-  const users = usersQuery.data || [];
+  const users = usersQuery.data?.rows || [];
+  const teams = usersQuery.data?.teams || [];
+  const ownTeam = usersQuery.data?.own_team || null;
+  const totalLeadsToday = users.reduce((sum, u) => sum + (u.leads_today || 0), 0);
+  const totalCallsToday = users.reduce((sum, u) => sum + (u.calls_today || 0), 0);
+  const activeTeamName = admin
+    ? (teamFilter === 'all' ? 'All teams' : teamFilter === 'unassigned' ? 'Unassigned' : (teams.find((t) => String(t.id) === teamFilter)?.name || 'Team'))
+    : (ownTeam?.name || 'My team');
   const [selectedUserId, setSelectedUserId] = useState('');
   const [employeeName, setEmployeeName] = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -99,9 +113,8 @@ const [deletingId, setDeletingId] = useState(null);
       });
       const result = await response.json().catch(() => null);
       if (!response.ok) throw new Error(result?.error || 'Failed to add employee.');
-      queryClient.setQueryData(['users'], (current = []) =>
-        [...current, result.data].sort((a, b) => a.employee_name.localeCompare(b.employee_name))
-      );
+      await queryClient.invalidateQueries({ queryKey: ['team-report'] });
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
       setEmployeeName('');
       setSelectedUserId(String(result.data.id));
       queryClient.setQueryData(
@@ -130,7 +143,8 @@ const [deletingId, setDeletingId] = useState(null);
     const response = await fetch(apiUrl(`/api/users/${user.id}`), { method: 'DELETE' });
     const result = await response.json().catch(() => null);
     if (!response.ok) throw new Error(result?.error || 'Failed to remove employee.');
-    queryClient.setQueryData(['users'], (current = []) => current.filter((u) => u.id !== user.id));
+    await queryClient.invalidateQueries({ queryKey: ['team-report'] });
+    await queryClient.invalidateQueries({ queryKey: ['users'] });
     if (String(user.id) === selectedUserId) setSelectedUserId('');
     await queryClient.invalidateQueries({ queryKey: ['overview-stats'] });
     setNotice(`${user.employee_name} was removed.`);
@@ -177,9 +191,10 @@ const [deletingId, setDeletingId] = useState(null);
       <div className="flex items-center justify-between mb-6" style={{ flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 className="page-title">Users & Team</h1>
-          <p className="page-subtitle">Manage team members, assigned records, and performance metrics</p>
+          <p className="page-subtitle">{admin ? 'Manage team members, assigned records, and performance metrics' : `View your team's numbers${ownTeam?.name ? ` · Team: ${ownTeam.name}` : ''}`}</p>
         </div>
         <div className="flex gap-2 items-center">
+          {admin && (<>
           <input
             type="date"
             value={reportDate}
@@ -211,6 +226,7 @@ const [deletingId, setDeletingId] = useState(null);
                   
                   {exporting ? 'Preparing...' : 'Export daily Report'}
              </Button>
+          </>)}
           <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => usersQuery.refetch()} disabled={usersQuery.isFetching}>
             Refresh
           </Button>
@@ -251,8 +267,9 @@ const [deletingId, setDeletingId] = useState(null);
           {error || usersQuery.error?.message || historyQuery.error?.message}
         </div>
       )}
-<TeamsPanel />
-      {/* Quick Add Employee Card */}
+{admin && <TeamsPanel />}
+      {/* Quick Add Employee Card (admin only) */}
+      {admin && (
       <div
         style={{
           background: '#ffffff',
@@ -293,6 +310,7 @@ const [deletingId, setDeletingId] = useState(null);
           </Button>
         </form>
       </div>
+      )}
 
       {/* Employees Directory Card */}
       <div
@@ -311,9 +329,51 @@ const [deletingId, setDeletingId] = useState(null);
               Team Directory
             </h2>
             <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0.2rem 0 0' }}>
-              Showing {usersFilters.filteredItems.length} active team member{usersFilters.filteredItems.length === 1 ? '' : 's'}
+              {activeTeamName} · Showing {usersFilters.filteredItems.length} active team member{usersFilters.filteredItems.length === 1 ? '' : 's'}
             </p>
           </div>
+        </div>
+
+        {/* Team picker (admin / Super Admin only) */}
+        {admin && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.9rem' }}>
+            {[{ key: 'all', label: 'All teams' }, ...teams.map((t) => ({ key: String(t.id), label: t.name })), { key: 'unassigned', label: 'Unassigned' }].map((item) => {
+              const active = teamFilter === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => { setTeamFilter(item.key); setSelectedUserId(''); }}
+                  style={{
+                    padding: '0.4rem 0.9rem',
+                    borderRadius: '999px',
+                    border: active ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                    background: active ? '#2563eb' : '#ffffff',
+                    color: active ? '#ffffff' : '#334155',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Today's totals for the team on screen */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.9rem' }}>
+          {[
+            { label: 'Members', value: users.length, bg: '#f8fafc', color: '#0f172a', border: '#e2e8f0' },
+            { label: 'Leads today', value: totalLeadsToday, bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+            { label: 'Calls today', value: totalCallsToday, bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' },
+          ].map((card) => (
+            <div key={card.label} style={{ padding: '0.55rem 1rem', borderRadius: '12px', background: card.bg, border: `1px solid ${card.border}`, minWidth: '120px' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 700, color: card.color }}>{card.value}</div>
+            </div>
+          ))}
         </div>
 
         <TableFilters {...usersFilters} searchPlaceholder="Search employees..." />
@@ -327,12 +387,20 @@ const [deletingId, setDeletingId] = useState(null);
                 <th style={{ textAlign: 'center' }}>Companies</th>
                 <th style={{ textAlign: 'center' }}>Email Attempts</th>
                 <th style={{ textAlign: 'center' }}>Called</th>
+                <th style={{ textAlign: 'center' }}>Leads (today)</th>
+                <th style={{ textAlign: 'center' }}>Calls (today)</th>
+                <th style={{ textAlign: 'center' }}>Interested (today / overall)</th>
+                <th style={{ textAlign: 'center' }}>Not Interested (today / overall)</th>
+                <th style={{ textAlign: 'center' }}>Converted (today / overall)</th>
+                <th style={{ textAlign: 'center' }}>Follow-ups (today)</th>
+                <th style={{ textAlign: 'center' }}>Total Follow-ups</th>
+                <th>Follow-up Status</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>Loading team members...</td></tr>
+                <tr><td colSpan="14" style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>Loading team members...</td></tr>
               ) : usersFilters.filteredItems.length ? usersPagination.pageItems.map((user) => {
                 const initials = (user.employee_name || 'U')
                   .split(' ')
@@ -365,7 +433,11 @@ const [deletingId, setDeletingId] = useState(null);
                         </div>
                         <div>
                           <div style={{ fontWeight: 600, color: '#0f172a' }}>{user.employee_name}</div>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>ID: #{user.id}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                            ID: #{user.id}
+                            {' · '}
+                            {user.has_login ? `${ROLE_LABELS[user.role] || user.role}${user.email ? ` · ${user.email}` : ''}` : 'No login yet'}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -389,15 +461,56 @@ const [deletingId, setDeletingId] = useState(null);
                         {user._count?.called_leads || 0}
                       </span>
                     </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', minWidth: '32px', padding: '3px 10px', borderRadius: '12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', fontWeight: 700, fontSize: '0.8rem' }}>
+                        {user.leads_today || 0}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', minWidth: '32px', padding: '3px 10px', borderRadius: '12px', background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontWeight: 700, fontSize: '0.8rem' }}>
+                        {user.calls_today || 0}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', minWidth: '48px', padding: '3px 10px', borderRadius: '12px', background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', fontWeight: 700, fontSize: '0.8rem' }}>
+                        {user.interested_today || 0} / {user.interested_total || 0}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', minWidth: '48px', padding: '3px 10px', borderRadius: '12px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', fontWeight: 700, fontSize: '0.8rem' }}>
+                        {user.not_interested_today || 0} / {user.not_interested_total || 0}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', minWidth: '48px', padding: '3px 10px', borderRadius: '12px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', fontWeight: 700, fontSize: '0.8rem' }}>
+                        {user.converted_today || 0} / {user.converted_total || 0}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', minWidth: '32px', padding: '3px 10px', borderRadius: '12px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', fontWeight: 700, fontSize: '0.8rem' }}>
+                        {user.followups_today || 0}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', minWidth: '32px', padding: '3px 10px', borderRadius: '12px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', fontWeight: 600, fontSize: '0.8rem' }}>
+                        {user.followups_total || 0}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '0.78rem', color: '#475569', maxWidth: '260px', whiteSpace: 'normal' }}>
+                      {user.followup_status || '-'}
+                    </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
-                        <Button
-                          variant={isSelected ? 'primary' : 'secondary'}
-                          onClick={() => selectUser(user.id)}
-                          style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem' }}
-                        >
-                          {isSelected ? 'Viewing History' : 'View History'}
-                        </Button>
+                        {(admin || me?.role === 'team_lead' || user.id === me?.id) && (
+                          <Button
+                            variant={isSelected ? 'primary' : 'secondary'}
+                            onClick={() => selectUser(user.id)}
+                            style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem' }}
+                          >
+                            {isSelected ? 'Viewing History' : 'View History'}
+                          </Button>
+                        )}
+                        {admin && (<>
                         <button
                           type="button"
                           title="Delete employee"
@@ -407,13 +520,14 @@ const [deletingId, setDeletingId] = useState(null);
                         >
                           <Trash2 size={14} /> {deletingId === user.id ? 'Removing...' : 'Delete'}
                         </button>
+                        </>)}
                       </div>
                     </td>
                   </tr>
                 );
               }) : (
                 <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', color: '#64748b', padding: '2.5rem' }}>
+                  <td colSpan="14" style={{ textAlign: 'center', color: '#64748b', padding: '2.5rem' }}>
                     {usersFilters.hasFilters ? 'No employees match the selected filters.' : 'No employees added yet.'}
                   </td>
                 </tr>

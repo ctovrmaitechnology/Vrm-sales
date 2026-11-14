@@ -30,6 +30,7 @@ import CategoryDropdown from '../components/CategoryDropdown';
 import FollowupBell from '../components/FollowupBell';
 import '../styles/leads.css';
 import '../styles/whatsapp.css';
+import { isAdmin } from '../utils/auth';
 
 const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${BACKEND_BASE_URL}${path}`;
@@ -152,6 +153,7 @@ const FOLLOWUP_TONES = {
 };
 const Leads = () => {
   const queryClient = useQueryClient();
+  const admin = isAdmin();
   const manualLeadsQuery = useQuery({
     queryKey: ['manual-leads'],
     queryFn: async () => {
@@ -371,6 +373,7 @@ const Leads = () => {
   const [followupLead, setFollowupLead] = useState(null);
   const [followupDate, setFollowupDate] = useState('');
   const [followupNote, setFollowupNote] = useState('');
+  const [followupMode, setFollowupMode] = useState('call');
   const [followupSaving, setFollowupSaving] = useState(false);
   const [followupError, setFollowupError] = useState('');
   const [statusSavingId, setStatusSavingId] = useState(null);
@@ -404,6 +407,7 @@ const Leads = () => {
     setFollowupLead(item);
     setFollowupDate(item.followup_date ? String(item.followup_date).slice(0, 10) : '');
     setFollowupNote(item.followup_note || '');
+    setFollowupMode(item.followup_mode || 'call');
     setFollowupError('');
   };
   const closeFollowup = () => { setFollowupLead(null); setFollowupError(''); };
@@ -413,7 +417,7 @@ const Leads = () => {
     setFollowupSaving(true);
     setFollowupError('');
     try {
-      await patchStatusFollowup(followupLead.id, { followup_date: followupDate, followup_note: followupNote });
+      await patchStatusFollowup(followupLead.id, { followup_date: followupDate, followup_note: followupNote, followup_mode: followupMode });
       closeFollowup();
     } catch (err) {
       setFollowupError(err.message);
@@ -582,6 +586,7 @@ const Leads = () => {
       </div>
       <div className="flex items-center justify-between mb-6" style={{ flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+{admin && (
           <ExcelImportControls
             entity="lead"
             users={users}
@@ -593,6 +598,7 @@ const Leads = () => {
               queryClient.invalidateQueries({ queryKey: ['global-search'] }),
             ])}
           />
+)}
           <Button
             variant="primary"
             icon={<Plus size={16} />}
@@ -820,7 +826,7 @@ const Leads = () => {
       </div>
 
       {/* Selection Banner */}
-      {selectedIds.size > 0 && (
+      {admin && selectedIds.size > 0 && (
         <div className="wa-selection-banner" style={{ marginBottom: '1rem' }}>
           <div className="wa-selection-info">
             <CheckSquare size={16} />
@@ -860,12 +866,14 @@ const Leads = () => {
             <thead>
               <tr>
                 <th style={{ width: '36px', textAlign: 'center', paddingLeft: '0.65rem' }}>
+{admin && (
                   <input
                     type="checkbox"
                     aria-label="Select all leads on this page"
                     checked={allOnPageSelected}
                     onChange={toggleSelectAll}
                   />
+)}
                 </th>
                 <th style={{ width: '48px', textAlign: 'center' }}>S.NO</th>
                 <th style={{ width: '11%' }} className="leads-th-sortable" onClick={() => handleSort('full_name')}>
@@ -931,12 +939,14 @@ const Leads = () => {
                   return (
                     <tr key={item.id} className={isChecked ? 'wa-row-selected' : ''}>
                       <td style={{ textAlign: 'center' }}>
+{admin && (
                         <input
                           type="checkbox"
                           aria-label={`Select ${item.full_name || 'lead'}`}
                           checked={isChecked}
                           onChange={() => toggleSelectOne(item.id)}
                         />
+)}
                       </td>
                       <td style={{ textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: '0.84rem' }}>
                         {startIndex + idx}
@@ -1061,7 +1071,7 @@ const Leads = () => {
                           return (
                             <button
                               type="button"
-                              title={item.followup_note || ''}
+                              title={item.followup_note_clean || item.followup_note || ''}
                               onClick={() => openFollowup(item)}
                               style={{ fontSize: '0.76rem', fontWeight: 600, padding: '3px 10px', borderRadius: '7px', cursor: 'pointer', whiteSpace: 'nowrap', ...FOLLOWUP_TONES[tone] }}
                             >
@@ -1069,6 +1079,16 @@ const Leads = () => {
                             </button>
                           );
                         })()}
+                        {(item.followup_mode || item.followup_emails_sent > 0 || item.followup_note) && (
+                          <div style={{ marginTop: '3px', fontSize: '0.7rem', color: '#64748b', lineHeight: 1.3, maxWidth: '170px', whiteSpace: 'normal' }}>
+                            {item.followup_mode && <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{item.followup_mode}</span>}
+                            {item.followup_mode && ' · '}
+                            Emails sent: {item.followup_emails_sent || 0}/3
+                            {(item.followup_note_clean || item.followup_note) && (
+                              <div style={{ color: '#475569' }}>{item.followup_note_clean || item.followup_note}</div>
+                            )}
+                          </div>
+                        )}
                       </td>
                       {/* ADDED */}
                       <td style={{ whiteSpace: 'nowrap' }}>
@@ -1126,6 +1146,7 @@ const Leads = () => {
                           >
                             <Pencil size={13} />
                           </button>
+{admin && (
                           <button
                             type="button"
                             title="Delete lead"
@@ -1147,6 +1168,7 @@ const Leads = () => {
                           >
                             <Trash2 size={13} />
                           </button>
+)}
                         </div>
                       </td>
                     </tr>
@@ -1795,6 +1817,17 @@ const Leads = () => {
               onChange={(e) => setFollowupDate(e.target.value)}
               style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '0.85rem' }}
             />
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Mode</label>
+            <select
+              value={followupMode}
+              onChange={(e) => setFollowupMode(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '0.85rem' }}
+            >
+              <option value="call">Call</option>
+              <option value="email">Email</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="meeting">Meeting</option>
+            </select>
             <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Notes</label>
             <textarea
               value={followupNote}

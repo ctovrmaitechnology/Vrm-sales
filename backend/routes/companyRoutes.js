@@ -1,5 +1,7 @@
 
 const express = require('express');
+const { requireRole } = require('../middleware/auth');
+const adminOnly = requireRole('admin');
 const router = express.Router();
 const multer = require('multer');
 const importUpload = multer({
@@ -29,11 +31,12 @@ const {
 } = require('../controllers/companyController');
 
 router.get('/template', sendCompanyTemplate);
-router.post('/import', handleImportUpload, importCompanies);
+router.post('/import', adminOnly,handleImportUpload, importCompanies);
 router.get('/', getCompanies);
 router.get('/:id', getCompanyById);
-router.post('/', createCompany);
-router.put('/:id', updateCompany);
-router.delete('/:id', deleteCompany);
+router.post('/',adminOnly, createCompany);
+router.put('/:id', adminOnly, updateCompany);
+router.delete('/:id', adminOnly, deleteCompany);
 
 module.exports = router;
+

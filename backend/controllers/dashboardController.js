@@ -1,3 +1,4 @@
+const { getScopeUserIds } = require('../middleware/auth');
 const { PrismaClient } = require('@prisma/client');
 const prisma = require('../prismaClient');
 const { getUnifiedEmailDashboard, getUnifiedWhatsAppDashboard } = require('../unifiedDb');
@@ -224,6 +225,7 @@ async function searchLeadsAndCompanies(req, res) {
       return res.json({ success: true, leads: [], companies: [], totalFound: 0 });
     }
 
+    const scope = await getScopeUserIds(req.user);
     const [leads, companies] = await Promise.all([
       prisma.leads.findMany({
         where: {
@@ -233,7 +235,8 @@ async function searchLeadsAndCompanies(req, res) {
             { phone_number: { contains: q, mode: 'insensitive' } },
             { whatsapp_number: { contains: q, mode: 'insensitive' } },
             { company_name: { contains: q, mode: 'insensitive' } },
-          ]
+          ],
+          ...(scope && { user_id: { in: scope } }),
         },
         include: {
           owner: { select: { id: true, employee_name: true } }

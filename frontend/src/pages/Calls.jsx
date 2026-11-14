@@ -7,6 +7,7 @@ import {
   Settings, Plus, Trash2, ArrowRightLeft, CheckSquare, AlertCircle,
 } from 'lucide-react';
 import CampaignProgressWidgetShared from '../components/CampaignProgressWidget';
+import { isAdmin } from '../utils/auth';
 
 const API = import.meta.env.VITE_BACKEND_BASE_URL || '';
 
@@ -179,6 +180,7 @@ function TranscriptModal({ record, onClose }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Calls() {
+  const admin = isAdmin();
   const [tab, setTab] = useState('contacts');
 
   // Contacts tab
@@ -325,13 +327,15 @@ export default function Calls() {
   useEffect(() => {
     fetchContacts();
     fetchHistory(0);
+    if (admin) {
     fetchTransferSettings();
     fetch(`${API}/api/calls/campaign/status`)
       .then(r => r.json())
       .then(data => { if (data.running) { setProgress(data); startPolling(); } })
       .catch(() => {});
+    }
     return () => { if (progressInterval.current) clearInterval(progressInterval.current); };
-  }, [fetchContacts, fetchHistory, fetchTransferSettings, startPolling]);
+  }, [admin, fetchContacts, fetchHistory, fetchTransferSettings, startPolling]);
 
   useEffect(() => { fetchHistory(historyPage); }, [historyPage, fetchHistory]);
 
@@ -454,6 +458,7 @@ export default function Calls() {
           </div>
 
           {/* Transfer Settings Button */}
+{admin && (
           <button
             onClick={() => { setTransferModalOpen(true); setTransferMsg(null); }}
             className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-2 border-blue-200 text-blue-600 rounded-xl hover:bg-blue-50 transition-all"
@@ -466,8 +471,10 @@ export default function Calls() {
               </span>
             )}
           </button>
+)}
         </div>
 
+{admin && (
         <CampaignProgressWidgetShared
           type="call"
           statusUrl={`${API}/api/calls/campaign/status`}
@@ -476,6 +483,7 @@ export default function Calls() {
           stopUrl={`${API}/api/calls/campaign/stop`}
           onComplete={() => fetchHistory(historyPage)}
         />
+)}
 
         {/* Tabs */}
         <div className="flex gap-0 mb-6 border-b-2 border-gray-200">
@@ -548,7 +556,7 @@ export default function Calls() {
               </button>
 
               {/* Bulk call button */}
-              {selected.size > 0 && (
+              {admin && selected.size > 0 && (
                 <button
                   onClick={startCampaign}
                   className="flex items-center gap-2 bg-blue-600 text-white rounded-xl px-5 py-2.5 text-sm font-semibold hover:bg-blue-700 transition-colors shadow-md shadow-blue-200"
@@ -571,12 +579,14 @@ export default function Calls() {
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-800">
                     <th className="w-10 px-4 py-3">
+{admin && (
                       <input
                         type="checkbox"
                         checked={selected.size === filteredContacts.length && filteredContacts.length > 0}
                         onChange={toggleSelectAll}
                         className="rounded accent-blue-600"
                       />
+)}
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Name</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</th>
@@ -608,12 +618,14 @@ export default function Calls() {
                   {filteredContacts.map((c, i) => (
                     <tr key={i} className={`hover:bg-blue-50/30 dark:hover:bg-gray-800/40 transition-colors ${selected.has(c.phone) ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}>
                       <td className="px-4 py-3.5">
+{admin && (
                         <input
                           type="checkbox"
                           checked={selected.has(c.phone)}
                           onChange={() => toggleSelect(c.phone)}
                           className="rounded accent-blue-600"
                         />
+)}
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2.5">

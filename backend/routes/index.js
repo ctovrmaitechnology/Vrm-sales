@@ -13,7 +13,13 @@ const categoryRoutes = require('./categoryRoutes');
 const insightsRoutes = require('./insightsRoutes');
 const callRoutes = require('./callRoutes');
 const RocketReachroutes = require('./RocketReachroutes');
-const teamRoutes = require('./teamRoutes')
+const teamRoutes = require('./teamRoutes');
+const authRoutes = require('./authRoutes');
+const { authGate } = require('../middleware/auth');
+
+// Every /api request needs a valid login except the public addresses listed in middleware/auth.js
+router.use(authGate);
+router.use('/auth', authRoutes);
 router.use('/', emailRoutes);
 router.use('/', leadRoutes);
 router.use('/', trackingRoutes);
@@ -27,4 +33,5 @@ router.use('/insights', insightsRoutes);
 router.use('/calls', callRoutes);
 router.use('/rocketreach', RocketReachroutes);
 router.use('/teams', teamRoutes);
+router.use('/auth', authRoutes);
 module.exports = router;

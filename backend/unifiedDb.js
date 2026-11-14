@@ -448,14 +448,17 @@ async function getAllActiveLeads() {
   return users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-async function getManualLeads() {
-  return prisma.leads.findMany({
-    where: {
-      OR: [
-        { source: 'Manual Entry' },
-        { user_id: { not: null } },
-      ],
-    },
+// scope: null = every lead (admin); otherwise an array of employee IDs whose leads may be seen.
+async function getManualLeads(scope = null) {
+  const rows = await prisma.leads.findMany({
+    where: scope
+      ? { user_id: { in: scope } }
+      : {
+        OR: [
+          { source: 'Manual Entry' },
+          { user_id: { not: null } },
+        ],
+      },
     orderBy: { created_at: 'desc' },
     select: {
       id: true,
@@ -480,10 +483,25 @@ async function getManualLeads() {
       converted_at: true,
       followup_date: true,
       followup_note: true,
+      followup_note_clean: true,
+      followup_mode: true,
+      interested_at: true,
       owner: { select: { employee_name: true } },
       called_by: { select: { employee_name: true } }
     }
   });
+
+  // Follow-up emails actually sent per lead (from email_history)
+  const ids = rows.map((r) => r.id);
+  const counts = ids.length
+    ? await prisma.email_history.groupBy({
+        by: ['lead_id'],
+        where: { lead_id: { in: ids }, event_type: { in: ['follow_up_1', 'follow_up_2', 'follow_up_3'] }, status: 'sent' },
+        _count: { _all: true }
+      })
+    : [];
+  const byLead = new Map(counts.map((c) => [c.lead_id, c._count._all]));
+  return rows.map((r) => ({ ...r, followup_emails_sent: byLead.get(r.id) || 0 }));
 }
 
 async function getActiveUserById(id) {

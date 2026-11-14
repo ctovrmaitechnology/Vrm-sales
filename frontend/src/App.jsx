@@ -17,6 +17,8 @@ import Insights from './pages/Insights';
 import Dashboard from './old-email-components/Dashboard';
 import UploadLeads from './old-email-components/UploadLeads';
 import { AppProvider } from './components/AppContext';
+import { getToken, isSuperAdmin } from './utils/auth';
+import AccessControl from './pages/AccessControl';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,14 +30,22 @@ const queryClient = new QueryClient({
   },
 });
 
-const ProtectedRoute = ({ children }) => {
-  const admin = localStorage.getItem('vrm_admin');
-  if (!admin) {
-    return <Navigate to="/" replace />;
+// Only the Super Admin may open the Access Control page
+const SuperAdminRoute = ({ children }) => {
+  if (!isSuperAdmin()) {
+    return <Navigate to="/app" replace />;
   }
   return children;
 };
 
+const ProtectedRoute = ({ children }) => {
+  if (!getToken()) {
+    return <Navigate to="/" replace />;
+  }  if (!getToken()) {
+    return <Navigate to="/" replace />;
+  }
+  return children;
+};
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -59,6 +69,9 @@ function App() {
               <Route path="insights" element={<Insights />} />
               <Route path="insight" element={<Navigate to="/app/insights" replace />} />
               <Route path="users" element={<Users />} />
+              <Route path="access" element={<SuperAdminRoute><AccessControl /></SuperAdminRoute>} />
+
+   
               <Route path="RocketReach" element={<RocketReach />} />
 
             </Route>

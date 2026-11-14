@@ -2,6 +2,7 @@ const prisma = require('../prismaClient');
 const vapiService = require('../services/vapiService');
 const fs = require('fs');
 const path = require('path');
+const { getScopeUserIds } = require('../middleware/auth');
 
 const TRANSFER_SETTINGS_PATH = path.join(__dirname, '../data/transfer_settings.json');
 
@@ -82,6 +83,7 @@ async function isDemoClicker(phone) {
  */
 async function getCallableContacts(req, res) {
   try {
+    const scope = await getScopeUserIds(req.user); // null = admin sees everything
     // First: fetch all phone numbers that have received a WhatsApp message
     // (status: sent, delivered, read, or clicked — meaning the message went out)
     const whatsappSentLeads = await prisma.whatsAppLeads.findMany({
@@ -107,7 +109,7 @@ async function getCallableContacts(req, res) {
           OR: [
             { phone_number: { not: null } },
             { whatsapp_number: { not: null } },
-          ],
+          ],          ...(scope && { user_id: { in: scope } }),
         },
         select: {
           id: true,
@@ -140,7 +142,8 @@ async function getCallableContacts(req, res) {
           owner: { select: { employee_name: true } },
         },
       }),
-      prisma.whatsAppLeads.findMany({
+      // WhatsApp-only contacts have no owner, so only admins see them
+      scope ? Promise.resolve([]) : prisma.whatsAppLeads.findMany({
         where: {
           whatsapp_number: { not: null },
           OR: [{ video_click_count: { gt: 0 } }, { demo_click_count: { gt: 0 } }],
@@ -470,10 +473,28 @@ async function startSingleCall(req, res) {
   const { phone, name, contactType, id } = req.body;
 
   if (!phone) {
-    if (!(await isDemoClicker(phone))) {
+    return res.status(400).json({ error: 'A phone number is required.' });
+  }
+  if (!(await isDemoClicker(phone))) {
     return res.status(403).json({ error: 'Only contacts who clicked Book a Demo or Demo Video can be called.' });
   }
-}
+
+  // Callers and team leads may only call contacts that belong to them / their team
+  const scope = await getScopeUserIds(req.user);
+  if (scope !== null) {
+    let ownerId = null;
+    const contactId = Number(id);
+    if (Number.isInteger(contactId) && contactId > 0) {
+      if (contactType === 'lead') {
+        ownerId = (await prisma.leads.findUnique({ where: { id: contactId }, select: { user_id: true } }))?.user_id ?? null;
+      } else if (contactType === 'company') {
+        ownerId = (await prisma.company.findUnique({ where: { id: contactId }, select: { user_id: true } }))?.user_id ?? null;
+      }
+    }
+    if (ownerId === null || !scope.includes(ownerId)) {
+      return res.status(403).json({ error: 'You can only call contacts assigned to you.' });
+    }
+  }
 
   let vapiCallId = null;
   let callStatus = 'queued';
@@ -587,13 +608,28 @@ async function getCallHistory(req, res) {
   const offset = parseInt(req.query.offset || '0', 10);
 
   try {
+    const scope = await getScopeUserIds(req.user);
+    let where = {};
+    if (scope) {
+      const [leadRows, companyRows] = await Promise.all([
+        prisma.leads.findMany({ where: { user_id: { in: scope } }, select: { id: true } }),
+        prisma.company.findMany({ where: { user_id: { in: scope } }, select: { id: true } }),
+      ]);
+      where = {
+        OR: [
+          { lead_id: { in: leadRows.map((r) => r.id) } },
+          { company_id: { in: companyRows.map((r) => r.id) } },
+        ],
+      };
+    }
     const [records, total] = await Promise.all([
       prisma.call_history.findMany({
+        where,
         orderBy: { created_at: 'desc' },
         take: limit,
         skip: offset,
       }),
-      prisma.call_history.count(),
+      prisma.call_history.count({ where }),
     ]);
 
     res.json({ records, total, limit, offset });

@@ -11,6 +11,7 @@ import {
   PhoneCall,
   BarChart3,
   Search, 
+  ShieldCheck, 
   ChevronDown,
   PanelLeftClose,
   PanelLeftOpen,
@@ -19,12 +20,16 @@ import {
   Sun,
 } from 'lucide-react';
 import { useApp } from './AppContext';
+import { clearSession, getUser, ROLE_LABELS } from '../utils/auth';
 
 const Sidebar = ({ collapsed = false, onToggle }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { theme, toggleTheme } = useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const currentUser = getUser();
+  const displayName = currentUser?.name || 'User';
+  const roleLabel = ROLE_LABELS[currentUser?.role] || 'Employee';
   const userMenuRef = useRef(null);
 
   useEffect(() => {
@@ -38,8 +43,7 @@ const Sidebar = ({ collapsed = false, onToggle }) => {
   }, []);
 
   const logout = () => {
-    localStorage.removeItem('vrm_admin');
-    localStorage.removeItem('isLoggedIn');
+    clearSession();
     queryClient.clear();
     navigate('/', { replace: true });
   };
@@ -54,7 +58,8 @@ const Sidebar = ({ collapsed = false, onToggle }) => {
     { path: '/app/insights', label: 'Insights', icon: <BarChart3 size={20} /> },
     { path: '/app/users', label: 'Users', icon: <Users size={20} /> },
     { path: '/app/RocketReach', label: 'Lead Finder', icon: <Search size={20} /> },
-  ];
+    { path: '/app/access', label: 'Access Control', icon: <ShieldCheck size={20} />, superOnly: true },
+  ].filter((item) => !item.superOnly || currentUser?.role === 'super_admin');
 
   return (
     <aside className="sidebar">
@@ -148,14 +153,14 @@ const Sidebar = ({ collapsed = false, onToggle }) => {
               justifyContent: 'center',
               flexShrink: 0,
             }}>
-              A
+                           {displayName.trim().charAt(0).toUpperCase() || 'U'}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0, flex: 1, overflow: 'hidden' }}>
               <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                Admin
+                {displayName}
               </span>
               <span style={{ fontSize: '0.72rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                Administrator
+                {roleLabel}
               </span>
             </div>
             <ChevronDown

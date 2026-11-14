@@ -25,7 +25,7 @@ Should either solution be relevant to your team's requirements, we would be plea
 
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
-Additionally, if you know another organisation that could benefit from our SaaS solutions, we'd be happy to offer you a 5% recurring referral commission when they subscribe to our platform.
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
 
 Thank you for your time and consideration.
 
@@ -53,6 +53,8 @@ We would be glad to arrange a tailored walkthrough at your convenience.
 
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
+
 Thank you for your time.
 
 Warm regards,
@@ -75,6 +77,8 @@ Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
 If these products are not relevant at this stage, we would truly appreciate a referral to someone who may find them useful.
 
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
+
 Thank you for your time.
 
 Warm regards,
@@ -96,6 +100,8 @@ Bench to Deploy: https://drive.google.com/file/d/1xtNqQX7qHogouW1wLUAz1dLt2o7N-K
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
 If these solutions are not relevant to your current needs, we would sincerely appreciate a referral to someone who may benefit.
+
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
 
 Thank you for your time and consideration. We hope to have the opportunity to work with your organisation in the future.
 
@@ -130,7 +136,7 @@ Workflow AI Demo: https://drive.google.com/file/d/1aCEqwMIpUgY1NXAoTQqCbJIwqPutk
 We would be pleased to walk you through how it fits your current hiring workflow.
 Book a 15-min call: https://vrmaitechnology.com/contactus/#send-message-section
 
-Additionally, if you know another organisation that could benefit from our SaaS solutions, we'd be happy to offer you a 5% recurring referral commission when they subscribe to our platform.
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
 
 Thank you for your time and consideration.
 
@@ -151,6 +157,8 @@ Workflow AI Demo: https://drive.google.com/file/d/1aCEqwMIpUgY1NXAoTQqCbJIwqPutk
 
 We would be pleased to walk you through how it fits your current hiring workflow.
 Book a 15-min call: https://vrmaitechnology.com/contactus/#send-message-section
+
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
 
 Thank you for your time.
 
@@ -173,6 +181,8 @@ Book a 15-min call: https://vrmaitechnology.com/contactus/#send-message-section
 
 If Workflow AI is not relevant to your current hiring needs, we would truly appreciate a referral to someone who may find it useful.
 
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
+
 Thank you for your time.
 
 Best regards,
@@ -193,6 +203,8 @@ Workflow AI Demo: https://drive.google.com/file/d/1aCEqwMIpUgY1NXAoTQqCbJIwqPutk
 Book a 15-min call: https://vrmaitechnology.com/contactus/#send-message-section
 
 If Workflow AI is not relevant right now, we would sincerely appreciate a referral to someone who may benefit.
+
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
 
 Thank you for your time and consideration.
 
@@ -228,7 +240,7 @@ AI Buddy Demo: https://drive.google.com/file/d/1z4URqyc3_lAuTFmtHDyrakv54mUySSsG
 We would be pleased to walk you through how it fits into your team's learning and development workflow.
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
-Additionally, if you know another organisation that could benefit from our SaaS solutions, we'd be happy to offer you a 5% recurring referral commission when they subscribe to our platform.
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
 
 Thank you for your time and consideration.
 
@@ -249,6 +261,8 @@ AI Buddy Demo: https://drive.google.com/file/d/1z4URqyc3_lAuTFmtHDyrakv54mUySSsG
 
 We would be pleased to walk you through how it fits your team's learning and development workflow.
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
+
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
 
 Thank you for your time.
 
@@ -271,6 +285,8 @@ Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
 If AI Buddy is not relevant to your current requirements, we would truly appreciate a referral to someone who may find it useful.
 
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
+
 Thank you for your time.
 
 Best regards,
@@ -291,6 +307,8 @@ AI Buddy Demo: https://drive.google.com/file/d/1z4URqyc3_lAuTFmtHDyrakv54mUySSsG
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
 If AI Buddy is not relevant right now, we would sincerely appreciate a referral to someone who may benefit.
+
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
 
 Thank you for your time and consideration.
 
@@ -327,6 +345,8 @@ Should either solution be relevant to your team's requirements, we would be plea
 
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
+
 Thank you for your time and consideration.
 
 Warm regards,
@@ -353,6 +373,8 @@ We would be glad to arrange a tailored walkthrough at your convenience.
 
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
+
 Thank you for your time.
 
 Warm regards,
@@ -375,6 +397,8 @@ Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
 If these products are not relevant at this stage, we would truly appreciate a referral to someone who may find them useful.
 
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
+
 Thank you for your time.
 
 Warm regards,
@@ -396,6 +420,8 @@ Bench to Deploy: https://drive.google.com/file/d/1xtNqQX7qHogouW1wLUAz1dLt2o7N-K
 Book a demo: https://vrmaitechnology.com/contactus/#send-message-section
 
 If these solutions are not relevant to your current needs, we would sincerely appreciate a referral to someone who may benefit.
+
+We also run a referral programme for organisations that connect us with the right teams — happy to share details if that is of interest.
 
 Thank you for your time and consideration. We hope to have the opportunity to work with your organisation in the future.
 
