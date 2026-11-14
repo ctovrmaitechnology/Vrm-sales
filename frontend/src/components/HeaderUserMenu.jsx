@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { clearSession, getUser, ROLE_LABELS } from '../utils/auth';
 import { Sun, Moon, ChevronDown, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -22,8 +23,7 @@ const HeaderUserMenu = () => {
   }, []);
 
   const logout = () => {
-    localStorage.removeItem('vrm_admin');
-    localStorage.removeItem('isLoggedIn');
+    clearSession();
     queryClient.clear();
     navigate('/', { replace: true });
   };
@@ -86,11 +86,11 @@ const HeaderUserMenu = () => {
             alignItems: 'center',
             justifyContent: 'center',
           }}>
-            A
+            {(getUser()?.name || 'U').trim().charAt(0).toUpperCase()}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, textAlign: 'left' }}>
-            <span style={{ fontSize: '0.825rem', fontWeight: 600, color: '#0f172a' }}>Admin</span>
-            <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Administrator</span>
+            <span style={{ fontSize: '0.825rem', fontWeight: 600, color: '#0f172a' }}>{getUser()?.name || 'User'}</span>
+            <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{ROLE_LABELS[getUser()?.role] || 'Employee'}</span>
           </div>
           <ChevronDown
             size={14}

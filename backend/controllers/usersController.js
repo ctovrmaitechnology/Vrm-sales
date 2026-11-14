@@ -1,18 +1,43 @@
 const ExcelJS = require('exceljs');
 const prisma = require('../prismaClient');
+const { getScopeUserIds } = require('../middleware/auth');
+const { getFollowUpCounts, getFollowUpNotes, summarizeNotes } = require('../services/followUpReport');
+
+const COUNTS = { select: { leads: true, companies: true, email_history: true, called_leads: true } };
+const USER_SELECT = {
+  id: true, employee_name: true, is_active: true, created_at: true, updated_at: true,
+  team_id: true, email: true, role: true, last_login_at: true,
+  password_hash: true, login_approved: true,
+  _count: COUNTS,
+};
+const ASSIGNABLE_ROLES = ['admin', 'team_lead', 'caller']; // super_admin is only created with the createAdmin script
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// none = no email yet, no_password = email registered, pending = password set but not approved, approved = can sign in
+function loginStatus(user) {
+  if (!user.email) return 'none';
+  if (!user.password_hash) return 'no_password';
+  return user.login_approved ? 'approved' : 'pending';
+}
+
+// Never send the password hash to the browser. Only admins see email / login details.
+function toPublicUser(user, isAdmin) {
+  const { password_hash, login_approved, email, last_login_at, ...rest } = user;
+  if (!isAdmin) return rest;
+  const login_status = loginStatus(user);
+  return { ...rest, email, last_login_at, login_status, has_login: login_status === 'approved' };
+}
 
 async function getUsers(req, res) {
   try {
+    const scope = await getScopeUserIds(req.user);
     const users = await prisma.users.findMany({
-      where: { is_active: true },
+      where: { is_active: true, ...(scope && { id: { in: scope } }) },
       orderBy: { employee_name: 'asc' },
-      include: {
-        _count: {
-          select: { leads: true, companies: true, email_history: true, called_leads: true }
-        }
-      }
+      select: USER_SELECT,
     });
-    return res.json({ success: true, data: users });
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    return res.json({ success: true, data: users.map((u) => toPublicUser(u, isAdmin)) });
   } catch (error) {
     console.error('Failed to fetch employees:', error);
     return res.status(500).json({ success: false, error: 'Failed to fetch employees.' });
@@ -30,27 +55,117 @@ async function createUser(req, res) {
   try {
     const user = await prisma.users.create({
       data: { employee_name: employeeName },
-      include: {
-        _count: {
-          select: { leads: true, companies: true, email_history: true, called_leads: true }
-        }
-      }
+      select: USER_SELECT,
     });
-    return res.status(201).json({ success: true, data: user });
+    return res.status(201).json({ success: true, data: toPublicUser(user, true) });
   } catch (error) {
     console.error('Failed to create employee:', error);
     return res.status(500).json({ success: false, error: 'Failed to create employee.' });
   }
 }
-async function deleteUser(req, res) {
+
+// Super Admin: every active employee with their login state, for the Access Control page.
+async function getAccessUsers(req, res) {
+  try {
+    const users = await prisma.users.findMany({
+      where: { is_active: true },
+      orderBy: { employee_name: 'asc' },
+      select: { ...USER_SELECT, team: { select: { name: true } } },
+    });
+    return res.json({
+      success: true,
+      data: users.map((u) => ({ ...toPublicUser(u, true), team_name: u.team?.name || null })),
+    });
+  } catch (error) {
+    console.error('Failed to fetch access list:', error);
+    return res.status(500).json({ success: false, error: 'Failed to load access list.' });
+  }
+}
+
+// Super Admin only: register an email, assign the role, approve / revoke, reset a password or switch login off.
+// Employees set their own password themselves (POST /api/auth/set-password).
+async function setUserLogin(req, res) {
   const userId = Number(req.params.id);
   if (!Number.isInteger(userId) || userId < 1) {
     return res.status(400).json({ success: false, error: 'Invalid employee ID.' });
   }
   try {
+    const target = await prisma.users.findFirst({ where: { id: userId, is_active: true } });
+    if (!target) return res.status(404).json({ success: false, error: 'Employee not found.' });
+    if (target.role === 'super_admin') {
+      return res.status(400).json({ success: false, error: 'The Super Admin account cannot be changed here.' });
+    }
+
+    const body = req.body || {};
+    const data = { updated_at: new Date() };
+
+    if (body.email !== undefined && body.email !== null && body.email !== '') {
+      const email = String(body.email).trim().toLowerCase();
+      if (!EMAIL_RE.test(email) || email.length > 255) {
+        return res.status(400).json({ success: false, error: 'Enter a valid email address.' });
+      }
+      if (email !== (target.email || '').toLowerCase()) {
+        const taken = await prisma.users.findFirst({
+          where: { email: { equals: email, mode: 'insensitive' }, id: { not: userId } },
+          select: { id: true },
+        });
+        if (taken) return res.status(400).json({ success: false, error: 'That email is already used by another employee.' });
+        data.email = email;
+        // a new email means the employee has to set a password again and be re-approved
+        data.password_hash = null;
+        data.login_approved = false;
+      }
+    }
+
+    if (body.role !== undefined && body.role !== null && body.role !== '') {
+      if (!ASSIGNABLE_ROLES.includes(body.role)) {
+        return res.status(400).json({ success: false, error: 'Role must be admin, team_lead or caller.' });
+      }
+      data.role = body.role;
+    }
+
+    if (body.reset_password === true || body.disable_login === true) {
+      data.password_hash = null;
+      data.login_approved = false;
+    }
+
+    if (body.approve === true) {
+      const hasPassword = data.password_hash === undefined ? Boolean(target.password_hash) : Boolean(data.password_hash);
+      if (!hasPassword || !(data.email ?? target.email)) {
+        return res.status(400).json({ success: false, error: 'This employee has not set a password yet.' });
+      }
+      data.login_approved = true;
+    } else if (body.approve === false) {
+      data.login_approved = false;
+    }
+
+    const user = await prisma.users.update({
+      where: { id: userId },
+      data,
+      select: { ...USER_SELECT, team: { select: { name: true } } },
+    });
+    return res.json({ success: true, data: { ...toPublicUser(user, true), team_name: user.team?.name || null } });
+  } catch (error) {
+    console.error('Failed to update login:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update login.' });
+  }
+}
+
+async function deleteUser(req, res) {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId) || userId < 1) {
+    return res.status(400).json({ success: false, error: 'Invalid employee ID.' });
+  }
+  if (userId === req.user.id) {
+    return res.status(400).json({ success: false, error: 'You cannot remove your own account.' });
+  }
+  try {
     const user = await prisma.users.findFirst({ where: { id: userId, is_active: true } });
     if (!user) {
       return res.status(404).json({ success: false, error: 'Employee not found.' });
+    }
+    if (user.role === 'super_admin') {
+      return res.status(400).json({ success: false, error: 'The Super Admin cannot be removed.' });
     }
     await prisma.users.update({
       where: { id: userId },
@@ -62,6 +177,7 @@ async function deleteUser(req, res) {
     return res.status(500).json({ success: false, error: 'Failed to remove employee.' });
   }
 }
+
 function parseDateBound(value, endOfDay = false) {
   if (!value) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
@@ -87,6 +203,10 @@ async function getUserHistory(req, res) {
   if (to) dateFilter.lte = to;
 
   try {
+    const scope = await getScopeUserIds(req.user);
+    if (scope && !scope.includes(userId)) {
+      return res.status(403).json({ success: false, error: 'You can only view your own team.' });
+    }
     const user = await prisma.users.findUnique({
       where: { id: userId },
       select: { id: true, employee_name: true, is_active: true, created_at: true }
@@ -156,11 +276,130 @@ function getIstDay(dateStr, daysAgo) {
   return { start: new Date(startMs), end: new Date(startMs + DAY_MS - 1) };
 }
 
+// Team Directory data: one row per employee with today's lead and call counts (India time).
+// Admin / Super Admin may pick any team (?team_id=3, ?team_id=unassigned, or all).
+// Team Leads and Callers always get only their own team, whatever they ask for.
+async function getTeamReport(req, res) {
+  try {
+    const me = req.user;
+    const isAdmin = me.role === 'admin' || me.role === 'super_admin';
+    const where = { is_active: true };
+
+    if (isAdmin) {
+      const raw = req.query.team_id;
+      if (raw === 'unassigned') {
+        where.team_id = null;
+      } else if (raw !== undefined && raw !== '' && raw !== 'all') {
+        const teamId = Number(raw);
+        if (!Number.isInteger(teamId) || teamId < 1) {
+          return res.status(400).json({ success: false, error: 'Invalid team.' });
+        }
+        where.team_id = teamId;
+      }
+    } else if (me.team_id) {
+      where.team_id = me.team_id;
+    } else {
+      where.id = me.id; // not in a team yet: only themselves
+    }
+
+    const day = getIstDay(undefined, 0);
+    const users = await prisma.users.findMany({
+      where,
+      orderBy: { employee_name: 'asc' },
+      select: { ...USER_SELECT, team: { select: { name: true } } },
+    });
+    const ids = users.map((u) => u.id);
+
+    const [leadGroups, callGroups, teams] = await Promise.all([
+      ids.length
+        ? prisma.leads.groupBy({
+          by: ['user_id'],
+          where: { user_id: { in: ids }, created_at: { gte: day.start, lte: day.end } },
+          _count: { _all: true },
+        })
+        : [],
+      ids.length
+        ? prisma.leads.groupBy({
+          by: ['called_by_user_id'],
+          where: { is_called: true, called_by_user_id: { in: ids }, called_at: { gte: day.start, lte: day.end } },
+          _count: { _all: true },
+        })
+        : [],
+      isAdmin
+        ? prisma.teams.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+    ]);
+
+    const [fu, fuNotes] = await Promise.all([
+      getFollowUpCounts(ids, day.start, day.end),
+      getFollowUpNotes(ids, day.start, day.end),
+    ]);
+    const statusWhere = { is_called: true, called_by_user_id: { in: ids }, lead_status: { in: ['interested', 'not_interested', 'converted'] } };
+    const [statusAll, statusToday] = ids.length
+      ? await Promise.all([
+        prisma.leads.groupBy({ by: ['called_by_user_id', 'lead_status'], where: statusWhere, _count: { _all: true } }),
+        prisma.leads.groupBy({ by: ['called_by_user_id', 'lead_status'], where: { ...statusWhere, lead_status_at: { gte: day.start, lte: day.end } }, _count: { _all: true } }),
+      ])
+      : [[], []];
+    const statusCount = (list, id, status) => list.find((g) => g.called_by_user_id === id && g.lead_status === status)?._count._all || 0;
+    const leadsToday = new Map(leadGroups.map((g) => [g.user_id, g._count._all]));
+    const callsToday = new Map(callGroups.map((g) => [g.called_by_user_id, g._count._all]));
+
+    const rows = users.map((u) => ({
+      ...toPublicUser(u, isAdmin),
+      team_name: u.team?.name || null,
+      leads_today: leadsToday.get(u.id) || 0,
+      calls_today: callsToday.get(u.id) || 0,
+      followups_today: fu.today.get(u.id) || 0,
+      followups_total: fu.total.get(u.id) || 0,
+      followup_status: summarizeNotes(fuNotes.get(u.id) || []),
+      interested_today: statusCount(statusToday, u.id, 'interested'),
+      interested_total: statusCount(statusAll, u.id, 'interested'),
+      not_interested_today: statusCount(statusToday, u.id, 'not_interested'),
+      not_interested_total: statusCount(statusAll, u.id, 'not_interested'),
+      converted_today: statusCount(statusToday, u.id, 'converted'),
+      converted_total: statusCount(statusAll, u.id, 'converted'),
+    }));
+
+    let ownTeam = null;
+    if (!isAdmin && me.team_id) {
+      ownTeam = (await prisma.teams.findUnique({ where: { id: me.team_id }, select: { id: true, name: true } })) || null;
+    }
+
+    return res.json({ success: true, data: { rows, teams, own_team: ownTeam, date: istDate(day.start.getTime()) } });
+  } catch (error) {
+    console.error('Failed to build team report:', error);
+    return res.status(500).json({ success: false, error: 'Failed to load the team report.' });
+  }
+}
+
 const UNASSIGNED = 'Unassigned';
 const MAX_RANGE_DAYS = 92;
 
 // Builds the single "Team Report" sheet: one block per team.
 // Day columns = From..To dates. Overall columns = everything up to the To date.
+// Wrap text, size the header and set row heights so long Follow-up Status text is readable
+// without scrolling sideways. statusCol = 1-based column number, statusWidth = its width in characters.
+function finishSheet(sheet, statusCol, statusWidth) {
+  sheet.eachRow((row) => {
+    const first = row.getCell(1).value;
+    if (first === 'Person') {
+      row.height = 44;
+      row.eachCell((cell) => { cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; });
+      return;
+    }
+    const cell = row.getCell(statusCol);
+    if (typeof cell.value === 'string' && cell.value.length > 1 && !cell.isMerged) {
+      cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+      const lines = cell.value.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / (statusWidth * 0.95))), 0);
+      row.height = Math.max(18, lines * 15 + 4);
+      row.eachCell((c, i) => { if (i !== statusCol && !c.isMerged) c.alignment = { ...(c.alignment || {}), vertical: 'top', wrapText: i === 1 }; });
+    }
+  });
+  sheet.views = [{ zoomScale: 90 }];
+  sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+}
+
 async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
   const [users, teams, leads, calls] = await Promise.all([
     prisma.users.findMany({
@@ -175,16 +414,23 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     }),
     prisma.leads.findMany({
       where: { is_called: true, called_by_user_id: { not: null }, called_at: { lte: rangeEnd } },
-         select: { called_by_user_id: true, called_at: true, lead_status: true },
+         select: { called_by_user_id: true, called_at: true, lead_status: true, lead_status_at: true },
     }),
   ]);
 
   const teamName = new Map(teams.map((t) => [t.id, t.name]));
   const blank = () => ({
     callsDay: 0, leadsDay: 0, callsAll: 0, leadsAll: 0,
-    interested: 0, not_interested: 0, converted: 0,
+    intDay: 0, intAll: 0, notDay: 0, notAll: 0, convDay: 0, convAll: 0,
+    fuDay: 0, fuAll: 0, notes: [],
   });
-  const keys = ['callsDay', 'leadsDay', 'callsAll', 'leadsAll', 'interested', 'not_interested', 'converted'];
+  const keys = ['callsDay', 'leadsDay', 'callsAll', 'leadsAll', 'intDay', 'intAll', 'notDay', 'notAll', 'convDay', 'convAll', 'fuDay', 'fuAll'];
+  const STATUS_KEYS = { interested: ['intDay', 'intAll'], not_interested: ['notDay', 'notAll'], converted: ['convDay', 'convAll'] };
+  const fuIds = users.map((u) => u.id);
+  const [fu, fuNotes] = await Promise.all([
+    getFollowUpCounts(fuIds, rangeStart, rangeEnd),
+    getFollowUpNotes(fuIds, rangeStart, rangeEnd),
+  ]);
   const inDay = (d) => new Date(d) >= rangeStart;
 
   const people = new Map(users.map((u) => [u.id, {
@@ -193,6 +439,12 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     ...blank(),
   }]));
 
+  for (const u of users) {
+    const p = people.get(u.id); if (!p) continue;
+    p.fuDay = fu.today.get(u.id) || 0;
+    p.fuAll = fu.total.get(u.id) || 0;
+    p.notes = fuNotes.get(u.id) || [];
+  }
   for (const l of leads) {
     const p = people.get(l.user_id); if (!p) continue;
     p.leadsAll++;
@@ -202,14 +454,18 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     const p = people.get(c.called_by_user_id); if (!p) continue;
     p.callsAll++;
     if (inDay(c.called_at)) p.callsDay++;
-    if (['interested', 'not_interested', 'converted'].includes(c.lead_status)) p[c.lead_status]++;
+    const sk = STATUS_KEYS[c.lead_status];
+    if (sk) {
+      p[sk[1]]++;
+      if (c.lead_status_at && new Date(c.lead_status_at) >= rangeStart && new Date(c.lead_status_at) <= rangeEnd) p[sk[0]]++;
+    }
   }
 
   const totalOf = (list) => keys.map((k) => list.reduce((n, x) => n + x[k], 0));
-  const COLS = 8;
+  const COLS = 14;
 
   const sheet = workbook.addWorksheet('Team Report');
-  sheet.columns = [{ width: 28 }, ...Array.from({ length: COLS - 1 }, () => ({ width: 16 }))];
+  sheet.columns = [{ width: 18 }, ...Array.from({ length: COLS - 2 }, () => ({ width: 10 })), { width: 50 }];
 
   const fromStr = istDate(rangeStart.getTime());
   const toStr = istDate(rangeEnd.getTime());
@@ -230,7 +486,7 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     }
   };
 
-  const blockHeaders = ['Person', 'Calls (day)', 'Leads (day)', 'Calls (overall)', 'Leads (overall)', 'Interested', 'Not Interested', 'Converted'];
+  const blockHeaders = ['Person', 'Calls (day)', 'Leads (day)', 'Calls (overall)', 'Leads (overall)', 'Interested (day)', 'Interested (overall)', 'Not Interested (day)', 'Not Interested (overall)', 'Converted (day)', 'Converted (overall)', 'Follow-ups Today', 'Overall Follow-ups', 'Follow-up Status'];
 
   const addBlock = (name, members) => {
     // Team name: one merged cell across all 8 columns
@@ -250,9 +506,9 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
       empty.getCell(1).font = { italic: true, color: { argb: 'FF94A3B8' } };
     }
     for (const p of members) {
-      styleRowCells(sheet.addRow([p.name, ...keys.map((k) => p[k])]));
+      styleRowCells(sheet.addRow([p.name, ...keys.map((k) => p[k]), summarizeNotes(p.notes, '\n') || '-']));
     }
-    styleRowCells(sheet.addRow(['TEAM TOTAL', ...totalOf(members)]), { fill: 'FFDBEAFE', bold: true });
+    styleRowCells(sheet.addRow(['TEAM TOTAL', ...totalOf(members), '']), { fill: 'FFDBEAFE', bold: true });
     sheet.addRow([]);
   };
 
@@ -267,7 +523,102 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     listed.push(...unassigned);
     addBlock(UNASSIGNED, unassigned);
   }
-  styleRowCells(sheet.addRow(['GRAND TOTAL', ...totalOf(listed)]), { fill: 'FF1E3A8A', bold: true, color: 'FFFFFFFF' });
+  styleRowCells(sheet.addRow(['GRAND TOTAL', ...totalOf(listed), '']), { fill: 'FF1E3A8A', bold: true, color: 'FFFFFFFF' });
+  finishSheet(sheet, COLS, 50);
+}
+
+// "Follow-up Report" sheet: per team and per person.
+// Follow-ups Today / Overall come from follow-up emails actually sent (email_history).
+// Follow-up Status summarises the cleaned follow-up notes saved in the chosen date range.
+async function addFollowUpReportSheet(workbook, rangeStart, rangeEnd) {
+  const [users, teams] = await Promise.all([
+    prisma.users.findMany({
+      where: { is_active: true },
+      orderBy: { employee_name: 'asc' },
+      select: { id: true, employee_name: true, team_id: true },
+    }),
+    prisma.teams.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+  ]);
+  const ids = users.map((u) => u.id);
+  const [fu, notes] = await Promise.all([
+    getFollowUpCounts(ids, rangeStart, rangeEnd),
+    getFollowUpNotes(ids, rangeStart, rangeEnd),
+  ]);
+
+  const teamName = new Map(teams.map((t) => [t.id, t.name]));
+  const people = users.map((u) => ({
+    name: u.employee_name,
+    team: (u.team_id && teamName.get(u.team_id)) || UNASSIGNED,
+    today: fu.today.get(u.id) || 0,
+    total: fu.total.get(u.id) || 0,
+    notes: notes.get(u.id) || [],
+  }));
+
+  const COLS = 4;
+  const sheet = workbook.addWorksheet('Follow-up Report');
+  sheet.columns = [{ width: 20 }, { width: 14 }, { width: 14 }, { width: 60 }];
+
+  const fromStr = istDate(rangeStart.getTime());
+  const toStr = istDate(rangeEnd.getTime());
+  sheet.mergeCells(1, 1, 1, COLS);
+  sheet.getCell(1, 1).value = fromStr === toStr ? `Follow-up Report: ${fromStr}` : `Follow-up Report: ${fromStr} to ${toStr}`;
+  sheet.getCell(1, 1).font = { bold: true, size: 14 };
+  sheet.addRow([]);
+
+  const thin = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+  const border = { top: thin, left: thin, bottom: thin, right: thin };
+  const style = (r, opts = {}) => {
+    for (let c = 1; c <= COLS; c++) {
+      const cell = r.getCell(c);
+      cell.border = border;
+      cell.alignment = { horizontal: c === 1 || c === 4 ? 'left' : 'center', vertical: 'top', wrapText: true };
+      if (opts.fill) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opts.fill } };
+      if (opts.bold) cell.font = { bold: true, color: opts.color ? { argb: opts.color } : undefined };
+    }
+  };
+
+  const addBlock = (name, members) => {
+    const titleRow = sheet.addRow([name]);
+    sheet.mergeCells(titleRow.number, 1, titleRow.number, COLS);
+    const t = sheet.getCell(titleRow.number, 1);
+    t.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+    t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    t.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleRow.height = 26;
+    style(sheet.addRow(['Person', 'Follow-ups Today', 'Overall Follow-ups', 'Follow-up Status']), { fill: 'FF2563EB', bold: true, color: 'FFFFFFFF' });
+    if (!members.length) {
+      const empty = sheet.addRow(['(no members)']);
+      style(empty);
+      empty.getCell(1).font = { italic: true, color: { argb: 'FF94A3B8' } };
+    }
+    for (const p of members) style(sheet.addRow([p.name, p.today, p.total, summarizeNotes(p.notes, '\n') || '-']));
+    style(sheet.addRow([
+      'TEAM TOTAL',
+      members.reduce((n, m) => n + m.today, 0),
+      members.reduce((n, m) => n + m.total, 0),
+      '',
+    ]), { fill: 'FFDBEAFE', bold: true });
+    sheet.addRow([]);
+  };
+
+  const listed = [];
+  for (const team of teams) {
+    const members = people.filter((p) => p.team === team.name);
+    listed.push(...members);
+    addBlock(team.name, members);
+  }
+  const unassigned = people.filter((p) => p.team === UNASSIGNED);
+  if (unassigned.length) {
+    listed.push(...unassigned);
+    addBlock(UNASSIGNED, unassigned);
+  }
+  style(sheet.addRow([
+    'GRAND TOTAL',
+    listed.reduce((n, m) => n + m.today, 0),
+    listed.reduce((n, m) => n + m.total, 0),
+    '',
+  ]), { fill: 'FF1E3A8A', bold: true, color: 'FFFFFFFF' });
+  finishSheet(sheet, COLS, 60);
 }
 
 async function exportdailyReport(req, res) {
@@ -294,6 +645,7 @@ async function exportdailyReport(req, res) {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'VRM Sales Dashboard';
     await addTeamReportSheet(workbook, day.start, rangeEnd);
+    await addFollowUpReportSheet(workbook, day.start, rangeEnd);
 
     const buffer = await workbook.xlsx.writeBuffer();
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -305,4 +657,4 @@ async function exportdailyReport(req, res) {
   }
 }
 
-module.exports = { getUsers, createUser, getUserHistory, exportdailyReport, deleteUser };
+module.exports = { getUsers, getTeamReport, createUser, getAccessUsers, setUserLogin, getUserHistory, exportdailyReport, deleteUser };

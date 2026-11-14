@@ -6,6 +6,7 @@ const { PrismaClient } = require('@prisma/client');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const routes = require('./routes/index');
+const { requireAuth } = require('./middleware/auth');
 const linkedinRoutes = require('./routes/linkedinRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 
@@ -30,13 +31,13 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Company routes
-app.use('/api/companies', companyRoutes);
+app.use('/api/companies', requireAuth, companyRoutes);
 
 // Master API routes
 app.use('/api', routes);
 
 // LinkedIn routes
-app.use('/linkedin-api', linkedinRoutes);
+app.use('/linkedin-api', requireAuth, linkedinRoutes);
 
 // Follow-up cron configuration
 const DEFAULT_FOLLOW_UP_CRON_SCHEDULE = '0 10,18 * * *';

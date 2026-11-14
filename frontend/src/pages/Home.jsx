@@ -29,6 +29,7 @@ import { hasSentWhatsAppTemplate } from '../utils/whatsappStatus';
 import useTablePagination from '../hooks/useTablePagination';
 import HeaderUserMenu from '../components/HeaderUserMenu';
 import '../styles/overview.css';
+import { isAdmin } from '../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
@@ -698,6 +699,7 @@ const Home = () => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem' }}>
+{isAdmin() && (<>
             <button
               type="button"
               onClick={() => downloadWorkload('xlsx')}
@@ -743,6 +745,7 @@ const Home = () => {
               <FileText size={15} color="#dc2626" />
               <span>{workloadExportFormat === 'pdf' ? 'Preparing PDF...' : 'Download PDF'}</span>
             </button>
+</>)}
 
             <button
               type="button"

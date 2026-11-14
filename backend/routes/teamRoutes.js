@@ -3,7 +3,10 @@ const {
   getTeams, createTeam, renameTeam, deleteTeam, addTeamMember, removeTeamMember,
 } = require('../controllers/teamController');
 
+const { requireRole } = require('../middleware/auth');
+
 const router = express.Router();
+router.use(requireRole('admin'));
 
 router.get('/', getTeams);
 router.post('/', createTeam);

@@ -1,4 +1,6 @@
 const express = require('express');
+const { requireRole } = require('../middleware/auth');
+const adminOnly = requireRole('admin');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
@@ -26,19 +28,19 @@ const handleImportUpload = (req, res, next) => {
 
 router.get('/ingestion/all', getAllLeads);
 router.get('/manual-leads/template', sendLeadTemplate);
-router.post('/manual-leads/import', handleImportUpload, importManualLeads);
+router.post('/manual-leads/import', adminOnly, handleImportUpload, importManualLeads);
 router.get('/manual-leads', getManualLeadsController);
 router.post('/manual-leads', createManualLeadController);
 router.put('/manual-leads/:id', updateManualLeadController);
 router.patch('/manual-leads/:id/status-followup', updateLeadStatusFollowup);
 router.get('/lead-followups', getLeadFollowups);
 router.patch('/manual-leads/:id/call-status', updateLeadCallStatus);
-router.delete('/manual-leads/:id', deleteManualLeadController);
-router.post('/manual-leads/bulk-delete', bulkDeleteManualLeads);
+router.delete('/manual-leads/:id', adminOnly, deleteManualLeadController);
+router.post('/manual-leads/bulk-delete', adminOnly, bulkDeleteManualLeads);
 router.get('/ingestion/whatsapp', getWhatsAppLeads);
 router.get('/ingestion/email', getEmailLeads);
 router.patch('/lead/:email/status', updateStatus);
-router.delete('/delete', deleteLead);
+router.delete('/delete', adminOnly, deleteLead);
 router.post('/upload-leads', upload.single('file'), uploadLeads);
 router.post('/upload-lead-json', uploadSingleLead);
 

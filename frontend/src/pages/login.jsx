@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AuroraBackground from '../components/AuroraBackground';
+import { setSession } from '../utils/auth';
+
+const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 
 function Login() {
 
@@ -14,13 +17,6 @@ function Login() {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const ADMIN_USERS = [
-    { email: 'maanusree@vrmaitechnology.com', password: 'password@vrm' },
-    { email: 'harini@vrmaitechnology.com', password: 'password@vrm' },
-    { email: 'admin@vrmaitechnology.com', password: 'vrm123' },
-    { email: 'srinesh@vrmaitechnology.com', password: 'vvv123' },
-  ];
-
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -29,18 +25,49 @@ function Login() {
     setError('');
   };
 
-  const handleLogin = (e) => {
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState('login'); // 'login' or 'setup' (first-time password)
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const handleLogin = async (e) => {
     e.preventDefault();
-
-    const matched = ADMIN_USERS.find(
-      (u) => u.email === formData.email.trim().toLowerCase() && u.password === formData.password
-    );
-
-    if (matched) {
-      localStorage.setItem('vrm_admin', JSON.stringify({ email: matched.email, loggedInAt: Date.now() }));
+    if (loading) return;
+    setNotice('');
+    if (mode === 'setup') {
+      if (formData.password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+      if (formData.password !== confirmPassword) { setError('The two passwords do not match.'); return; }
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/${mode === 'setup' ? 'set-password' : 'login'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.email.trim().toLowerCase(),
+          password: formData.password,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (mode === 'setup') {
+        if (!response.ok) { setError(data.error || 'Could not save the password.'); return; }
+        setNotice(data.message || 'Password saved. Wait for the Super Admin to approve your account.');
+        setMode('login');
+        setConfirmPassword('');
+        setFormData({ ...formData, password: '' });
+        return;
+      }
+      if (!response.ok || !data.token) {
+        setError(data.error || 'Invalid email or password.');
+        return;
+      }
+      setSession(data.token, data.user);
       navigate('/app');
-    } else {
-      setError('Invalid email or password.');
+    } catch {
+      setError('Could not reach the server. Try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -173,6 +200,37 @@ function Login() {
             </div>
           </div>
 
+          {mode === 'setup' && (
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                Confirm password
+              </label>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Type the password again"
+                value={confirmPassword}
+                onChange={(e) => { setConfirmPassword(e.target.value); setError(''); }}
+                required
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  outline: 'none',
+                  fontSize: '0.925rem',
+                  backgroundColor: '#ffffff',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          )}
+
+          {notice && (
+            <div style={{ marginBottom: '16px', padding: '10px', background: '#dcfce7', color: '#15803d', borderRadius: '8px', fontSize: '14px', textAlign: 'center' }}>
+              {notice}
+            </div>
+          )}
+
           {/* ERROR MESSAGE */}
           {error && (
             <div style={{ marginBottom: '16px', padding: '10px', background: '#fee2e2', color: '#dc2626', borderRadius: '8px', fontSize: '14px', textAlign: 'center' }}>
@@ -183,6 +241,7 @@ function Login() {
           {/* LOGIN BUTTON */}
           <button
             type="submit"
+            disabled={loading}
             style={{
               width: '100%',
               padding: '12px',
@@ -190,16 +249,26 @@ function Login() {
               color: '#fff',
               border: 'none',
               borderRadius: '10px',
-              cursor: 'pointer',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1,
               fontSize: '0.95rem',
               fontWeight: 600,
               boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
               transition: 'background-color 0.2s',
             }}
           >
-            Sign in
+            {loading ? 'Please wait...' : (mode === 'setup' ? 'Save my password' : 'Sign in')}
           </button>
 
+          <div style={{ marginTop: '16px', textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={() => { setMode(mode === 'login' ? 'setup' : 'login'); setError(''); setNotice(''); setConfirmPassword(''); }}
+              style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, color: '#2563eb' }}
+            >
+              {mode === 'login' ? 'First time? Set my password' : 'Back to sign in'}
+            </button>
+          </div>
         </form>
       </div>
     </div>

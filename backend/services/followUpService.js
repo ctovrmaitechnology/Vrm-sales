@@ -5,9 +5,66 @@ const { sendFollowUp1, sendFollowUp2, sendFollowUp3 } = require('./emailService'
 
 let lastFollowUpDbWarningAt = 0;
 
+const DAY_MS = 1000 * 60 * 60 * 24;
+const FOLLOW_UP_DAYS = [7, 15, 30]; // same delays as the original follow-up logic
+const RETRY_AFTER_FAILURE_MS = 12 * 60 * 60 * 1000;
+
+// Follow-up emails for leads whose status was set to Interested in the Leads page.
+// Day 7 / 15 / 30 are counted from interested_at. Email only.
+async function runInterestedLeadFollowUps() {
+  const now = new Date();
+  const result = { success: true, checked: 0, sent: 0, failed: 0 };
+
+  const leads = await prisma.leads.findMany({
+    where: { lead_status: 'interested', interested_at: { not: null }, email: { not: null } },
+    select: { id: true, full_name: true, email: true, interested_at: true }
+  });
+
+  for (const lead of leads) {
+    result.checked++;
+    if (!lead.email || !lead.email.includes('@')) continue;
+
+    const history = await prisma.email_history.findMany({
+      where: { lead_id: lead.id, event_type: { in: ['follow_up_1', 'follow_up_2', 'follow_up_3'] } },
+      select: { event_type: true, status: true, attempted_at: true }
+    });
+    const sentCount = history.filter((h) => h.status === 'sent').length;
+    if (sentCount >= FOLLOW_UP_DAYS.length) continue;
+
+    const nextNumber = sentCount + 1;
+    const dueAt = new Date(lead.interested_at).getTime() + FOLLOW_UP_DAYS[sentCount] * DAY_MS;
+    if (now.getTime() < dueAt) continue;
+
+    const eventType = `follow_up_${nextNumber}`;
+    const lastFailure = history
+      .filter((h) => h.event_type === eventType && h.status === 'failed' && h.attempted_at)
+      .map((h) => new Date(h.attempted_at).getTime())
+      .sort((a, b) => b - a)[0];
+    if (lastFailure && now.getTime() - lastFailure < RETRY_AFTER_FAILURE_MS) continue;
+
+    const target = { name: lead.full_name || '', email: lead.email, product_type: null };
+    try {
+      const sender = [sendFollowUp1, sendFollowUp2, sendFollowUp3][nextNumber - 1];
+      const brevoResult = await sender(target);
+      await recordEmailHistory({ email: lead.email, status: 'sent', eventType, attemptNumber: nextNumber, providerMessageId: brevoResult?.messageId || null });
+      result.sent++;
+    } catch (error) {
+      result.failed++;
+      console.error(`Interested follow-up ${nextNumber} failed for lead ${lead.id}:`, error.message);
+      try {
+        await recordEmailHistory({ email: lead.email, status: 'failed', eventType, attemptNumber: nextNumber, errorMessage: error.message });
+      } catch (historyError) {
+        console.error('Failed to record follow-up failure:', historyError.message);
+      }
+    }
+  }
+
+  console.log(`Interested follow-ups: checked=${result.checked} sent=${result.sent} failed=${result.failed}`);
+  return result;
+}
+
 async function runFollowUpEmailCheck() {
-  console.log("Email follow-ups are disabled. Skipping.");
-  return { success: true, skipped: true, reason: "email_followups_disabled" };
+  return runInterestedLeadFollowUps();
 
   try {
     try {
