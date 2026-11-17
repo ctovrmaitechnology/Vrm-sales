@@ -1,4 +1,4 @@
-﻿ALTER TABLE "leads" ADD COLUMN IF NOT EXISTS "followup_time" TEXT;
+ALTER TABLE "leads" ADD COLUMN IF NOT EXISTS "followup_time" TEXT;
 ALTER TABLE "leads" ADD COLUMN IF NOT EXISTS "followup_priority" TEXT;
 
 CREATE TABLE IF NOT EXISTS "followup_reminders" (

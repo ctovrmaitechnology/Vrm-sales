@@ -74,7 +74,7 @@ const Users = () => {
   const [exporting, setExporting] = useState(false);
     const [reportDate, setReportDate] = useState('');
       const [reportTo, setReportTo] = useState('');
-        const [mailTarget, setMailTarget] = useState('all');
+  const [mailTarget, setMailTarget] = useState('all');
   const [mailSending, setMailSending] = useState(false);
 const [deletingId, setDeletingId] = useState(null);
   const historyQuery = useQuery({
@@ -184,6 +184,7 @@ const [deletingId, setDeletingId] = useState(null);
        setExporting(false);
      }
    };
+
   const sendFollowupMail = async () => {
     if (mailTarget === 'all' && !window.confirm("Send today's follow-up mail to all users?")) return;
     setMailSending(true);
@@ -204,6 +205,7 @@ const [deletingId, setDeletingId] = useState(null);
       setMailSending(false);
     }
   };
+
   const selectedUserObj = users.find((user) => String(user.id) === selectedUserId) || history?.user;
 
   return (
@@ -216,6 +218,20 @@ const [deletingId, setDeletingId] = useState(null);
         </div>
         <div className="flex gap-2 items-center">
           {admin && (<>
+          <select
+            value={mailTarget}
+            onChange={(e) => setMailTarget(e.target.value)}
+            title="Who should get today's follow-up mail"
+            style={{ padding: '0.45rem 0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
+          >
+            <option value="all">All users</option>
+            {users.map((u) => (
+              <option key={u.id} value={String(u.id)}>{u.employee_name}{u.email ? '' : ' (no email)'}</option>
+            ))}
+          </select>
+          <Button variant="secondary" onClick={sendFollowupMail} disabled={mailSending}>
+            {mailSending ? 'Sending...' : 'Send follow-up mail'}
+          </Button>
           <input
             type="date"
             value={reportDate}
@@ -231,9 +247,21 @@ const [deletingId, setDeletingId] = useState(null);
             title="To date (empty = same as From)"
             style={{ padding: '0.45rem 0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}
           />
-<Button variant="secondary" icon={<Download size={16} />} onClick={downloaddailyReport} disabled={exporting}></Button>
+
              <Button variant="secondary" icon={<Download size={16} />} onClick={downloaddailyReport} disabled={exporting}>
-                   {exporting ? 'Preparing...' : 'Export daily Report'}
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  {exporting ? 'Preparing...' : 'Export daily Report'}
              </Button>
           </>)}
           <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => usersQuery.refetch()} disabled={usersQuery.isFetching}>

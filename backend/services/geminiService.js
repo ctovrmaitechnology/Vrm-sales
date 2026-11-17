@@ -71,11 +71,15 @@ Examples:
 Note: "${raw.replace(/"/g, "'")}"
 Sentence:`;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
+  // One time budget for the whole save; each model gets its own short timeout.
+  const deadline = Date.now() + 15000;
   try {
     let lastError = null;
     for (const model of modelCandidates()) {
+      const remaining = deadline - Date.now();
+      if (remaining < 1500) break;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), Math.min(6000, remaining));
       try {
         const text = await callModel(model, key, prompt, controller.signal);
         const cleaned = String(text || '').replace(/^["'\s]+|["'\s]+$/g, '').slice(0, 300);
@@ -86,12 +90,15 @@ Sentence:`;
         return raw;
       } catch (error) {
         lastError = error;
-        // 404 / 400 = this model is not available to your account: try the next one.
-        if (error.status === 404 || error.status === 400) {
-          console.warn(error.message);
+        // busy (503/500/502/504), rate limited (429), timed out, or not available (400/404): try the next model
+        const retryable = error.name === 'AbortError' || [400, 404, 429, 500, 502, 503, 504].includes(error.status);
+        if (retryable) {
+          console.warn(`Gemini ${model} skipped: ${error.message}`.slice(0, 200));
           continue;
         }
-        throw error; // 401/403/429/network: another model will not help
+        throw error; // 401/403 etc.: another model will not help
+      } finally {
+        clearTimeout(timer);
       }
     }
     if (lastError) throw lastError;
@@ -99,8 +106,6 @@ Sentence:`;
   } catch (error) {
     console.error('Gemini note cleanup failed:', error.message);
     return raw;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
