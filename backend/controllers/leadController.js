@@ -1087,7 +1087,7 @@ function todayInIndia() {
 }
 
 const FOLLOWUP_MODES = ['email', 'call', 'whatsapp', 'meeting'];
-
+const FOLLOWUP_PRIORITIES = ['Critical', 'Active', 'Nurture'];
 async function updateLeadStatusFollowup(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id < 1) {
