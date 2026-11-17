@@ -74,6 +74,8 @@ const Users = () => {
   const [exporting, setExporting] = useState(false);
     const [reportDate, setReportDate] = useState('');
       const [reportTo, setReportTo] = useState('');
+        const [mailTarget, setMailTarget] = useState('all');
+  const [mailSending, setMailSending] = useState(false);
 const [deletingId, setDeletingId] = useState(null);
   const historyQuery = useQuery({
     queryKey: ['user-history', selectedUserId, fromDate, toDate],
@@ -182,7 +184,26 @@ const [deletingId, setDeletingId] = useState(null);
        setExporting(false);
      }
    };
-
+  const sendFollowupMail = async () => {
+    if (mailTarget === 'all' && !window.confirm("Send today's follow-up mail to all users?")) return;
+    setMailSending(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch(apiUrl('/api/users/send-followup-mail'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: mailTarget }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || 'Failed to send follow-up mail.');
+      setNotice(result.message);
+    } catch (err) {
+      setError(err.message || 'Failed to send follow-up mail.');
+    } finally {
+      setMailSending(false);
+    }
+  };
   const selectedUserObj = users.find((user) => String(user.id) === selectedUserId) || history?.user;
 
   return (
@@ -210,21 +231,9 @@ const [deletingId, setDeletingId] = useState(null);
             title="To date (empty = same as From)"
             style={{ padding: '0.45rem 0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}
           />
-
+<Button variant="secondary" icon={<Download size={16} />} onClick={downloaddailyReport} disabled={exporting}></Button>
              <Button variant="secondary" icon={<Download size={16} />} onClick={downloaddailyReport} disabled={exporting}>
-                  
-                  
-                  
-                  
-                  
-                  
-                  
-                  
-                  
-                  
-                  
-                  
-                  {exporting ? 'Preparing...' : 'Export daily Report'}
+                   {exporting ? 'Preparing...' : 'Export daily Report'}
              </Button>
           </>)}
           <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => usersQuery.refetch()} disabled={usersQuery.isFetching}>

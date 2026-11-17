@@ -151,6 +151,9 @@ async function sendDailySummaries(now = new Date()) {
   });
   const byUser = new Map();
   for (const l of leads) {
+    // skip follow-ups whose date/time has already passed
+    if (dateStr(l.followup_date) < date) continue;
+    if (l.followup_time && scheduledAt(dateStr(l.followup_date), l.followup_time) < now) continue;
     const r = recipientOf(l);
     if (!r) continue;
     if (!byUser.has(r.id)) byUser.set(r.id, { r, leads: [] });
@@ -199,7 +202,48 @@ async function sendBeforeReminders(now = new Date()) {
   }
   return { checked: leads.length, sent };
 }
+// Manual trigger (Users page): send today's follow-up summary now to one user or to everyone.
+async function sendManualSummaries(target, now = new Date()) {
+  const { date } = istParts(now);
+  const wanted = target === 'all' ? null : Number(target);
+  if (wanted !== null && !Number.isInteger(wanted)) throw new Error('Invalid user.');
 
+  const leads = await prisma.leads.findMany({
+    where: { followup_date: new Date(`${date}T00:00:00.000Z`), OR: NOT_CONVERTED },
+    select: LEAD_SELECT,
+  });
+  const byUser = new Map();
+  let noEmail = 0;
+  for (const l of leads) {
+    if (l.followup_time && scheduledAt(dateStr(l.followup_date), l.followup_time) < now) continue; // already passed
+    const r = recipientOf(l);
+    if (!r) { noEmail++; continue; }
+    if (wanted !== null && r.id !== wanted) continue;
+    if (!byUser.has(r.id)) byUser.set(r.id, { r, leads: [] });
+    byUser.get(r.id).leads.push(l);
+  }
+  let sent = 0;
+  let failed = 0;
+  for (const { r, leads: list } of byUser.values()) {
+    list.sort((a, b) => (a.followup_time || '99:99').localeCompare(b.followup_time || '99:99') ||
+      (PRIORITY_ORDER[a.followup_priority] ?? 1) - (PRIORITY_ORDER[b.followup_priority] ?? 1));
+    const ok = await deliver(`manual:${r.id}:${date}:${now.getTime()}`,
+      { reminder_type: 'manual', user_id: r.id, recipient_email: r.email, followup_date: new Date(`${date}T00:00:00.000Z`), scheduled_for: now },
+      { to: r.email, toName: r.name, ...dailyMail(r, list, date) });
+    if (ok) sent++; else failed++;
+  }
+  let message;
+  if (wanted !== null && byUser.size === 0) {
+    const u = await prisma.users.findUnique({ where: { id: wanted }, select: { email: true, employee_name: true } });
+    message = !u ? 'User not found.' : !u.email ? `${u.employee_name} has no email saved, so no mail was sent.` : `${u.employee_name} has no pending follow-ups for today. No mail sent.`;
+  } else if (byUser.size === 0) {
+    message = 'No pending follow-ups for today. No mail sent.';
+  } else {
+    message = `Follow-up mail sent to ${sent} user${sent === 1 ? '' : 's'}${failed ? `, ${failed} failed (see followup_reminders log)` : ''}.`;
+    if (wanted === null && noEmail) message += ` ${noEmail} follow-up${noEmail === 1 ? '' : 's'} skipped: assigned user has no email.`;
+  }
+  return { sent, failed, noEmail, message };
+}
 let running = false;
 async function runFollowUpReminders(now = new Date()) {
   if (running) return { skipped: true };
@@ -211,4 +255,4 @@ async function runFollowUpReminders(now = new Date()) {
   } finally { running = false; }
 }
 
-module.exports = { runFollowUpReminders, sendDailySummaries, sendBeforeReminders };
+module.exports = { runFollowUpReminders, sendDailySummaries, sendBeforeReminders, sendManualSummaries};
