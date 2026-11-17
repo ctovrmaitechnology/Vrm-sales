@@ -485,6 +485,8 @@ async function getManualLeads(scope = null) {
       followup_note: true,
       followup_note_clean: true,
       followup_mode: true,
+      followup_time: true,
+      followup_priority: true,
       interested_at: true,
       owner: { select: { employee_name: true } },
       called_by: { select: { employee_name: true } }

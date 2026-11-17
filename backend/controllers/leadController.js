@@ -1123,6 +1123,8 @@ async function updateLeadStatusFollowup(req, res) {
         data.followup_set_at = null;
         data.followup_note_clean = null;
         data.followup_mode = null;
+        data.followup_time = null;
+        data.followup_priority = null;
       } else {
         const text = String(body.followup_date);
         const parsed = new Date(`${text}T00:00:00.000Z`);
@@ -1136,13 +1138,23 @@ async function updateLeadStatusFollowup(req, res) {
         data.followup_set_at = new Date();
         data.followup_note_clean = data.followup_note ? await cleanFollowUpNote(data.followup_note) : null;
         data.followup_mode = FOLLOWUP_MODES.includes(body.followup_mode) ? body.followup_mode : null;
+                const timeText = body.followup_time ? String(body.followup_time).slice(0, 5) : '';
+        if (timeText && !/^([01]\d|2[0-3]):[0-5]\d$/.test(timeText)) {
+          return res.status(400).json({ error: 'Follow-up time must be a valid time (HH:MM).' });
+        }
+        const priority = FOLLOWUP_PRIORITIES.includes(body.followup_priority) ? body.followup_priority : 'Active';
+        if (priority === 'Critical' && !timeText) {
+          return res.status(400).json({ error: 'Critical follow-ups need a time so the 1-hour reminder can be sent.' });
+        }
+        data.followup_time = timeText || null;
+        data.followup_priority = priority;
       }
     }
 
     const updated = await prisma.leads.update({
       where: { id },
       data,
-      select: { id: true, lead_status: true, converted_at: true, followup_date: true, followup_note: true, followup_note_clean: true, followup_mode: true, interested_at: true },
+      select: { id: true, lead_status: true, converted_at: true, followup_date: true, followup_time: true, followup_priority: true, followup_note: true, followup_note_clean: true, followup_mode: true, interested_at: true },
     });
     return res.json({ success: true, data: updated });
   } catch (err) {

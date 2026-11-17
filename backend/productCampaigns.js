@@ -1,5 +1,94 @@
 const DEFAULT_PRODUCT = 'it';
 
+// Initial email for the separate "VRM Product" choice.
+const VRM_PRODUCT_SUBJECT = 'AI Products from VRM AI Technology: Workflow AI, Bench to Deploy, AI Buddy and More';
+const VRM_PRODUCT_EMAIL = `Dear Sir/Madam,
+
+Greetings from VRM AI Technology (OPC) Pvt. Ltd.!
+
+We are an AI-based product development company specialising in building intelligent software solutions that help businesses automate operations, improve workforce efficiency, and enhance productivity.
+
+We would like to introduce our AI-powered products designed to address different business requirements.
+
+1. Workflow AI – End-to-End Recruitment Automation
+Workflow AI streamlines the entire hiring process through AI-powered automation, reducing manual screening and evaluation efforts.
+
+Key Features:
+- Intelligent resume screening and candidate ranking based on job descriptions.
+- AI-powered voice interviews with automated candidate evaluation.
+- Asynchronous video interviews to assess communication, confidence, and role suitability.
+- Automated coding assessments with anti-cheat proctoring.
+- End-to-end recruitment workflow management.
+
+Product Demo:
+https://drive.google.com/file/d/1aCEqwMIpUgY1NXAoTQqCbJIwqPutku3f/view?usp=sharing
+
+2. Bench to Deploy – Intelligent Bench Management
+Bench to Deploy helps IT companies optimise bench utilisation by matching unassigned employees with open client requirements.
+
+Key Features:
+- Matches available bench employees with relevant client requirements.
+- Creates personalised upskilling roadmaps based on skill gaps.
+- Validates technical readiness before candidate profile submission.
+- Helps improve employee utilisation and deployment efficiency.
+
+Product Demo:
+https://drive.google.com/file/d/1xtNqQX7qHogouW1wLUAz1dLt2o7N-KQQ/view?usp=sharing
+
+3. AI Buddy – AI-Powered Language Learning and Coaching
+AI Buddy is an intelligent language coaching platform designed to improve employee communication and language proficiency.
+
+Key Features:
+- Interactive voice conversations and speaking simulations.
+- Real-time pronunciation, accent, and grammar feedback.
+- Personalised learning tracks based on employee skill levels.
+- Corporate upskilling programmes tailored to organisational requirements.
+- Enterprise analytics to track employee language proficiency and progress.
+
+Product Demo:
+https://drive.google.com/file/d/1z4URqyc3_lAuTFmtHDyrakv54mUySSsG/view?usp=drive_link
+
+4. People Connect (Global) – AI-Powered Citizen Engagement
+People Connect is an AI-powered citizen engagement platform that modernises public services through intelligent communication and digital governance.
+
+Key Features:
+- Citizen engagement portal.
+- Real-time grievance tracking.
+- Public sentiment analysis.
+- Automated communication.
+
+5. Visionix SI – Biometric Security and Check-ins
+Visionix SI automates biometric security, liveness verification, and employee check-ins.
+
+Key Features:
+- Real-time face recognition.
+- Biometric gate integration.
+- Liveness detection bot.
+- Secure visual logging panels.
+
+6. Exit Intelligence – Workforce Intelligence
+Exit Intelligence is AI-powered workforce intelligence that transforms employee feedback into actionable retention and organisational insights.
+
+Key Features:
+- AI-powered exit interviews.
+- Employee sentiment analysis.
+- Attrition and workforce insights.
+- Executive HR dashboards.
+
+Let's Connect!
+We would be happy to arrange a personalised product demonstration and discuss how these solutions can support your organisation's specific requirements.
+
+Book a Demo:
+https://vrmaitechnology.com/contactus/#send-message-section
+
+We also have a referral programme for organisations that connect us with potential clients. Please let us know if you would be interested in learning more.
+
+Thank you for your valuable time and consideration. We look forward to exploring potential business opportunities with your organisation.
+
+Best Regards,
+VRM AI Technology (OPC) Pvt. Ltd.`;
+
+
 const campaigns = {
   it: {
     subject: 'AI-Powered Hiring and Bench Management Solutions from VRM AI Technology',
@@ -431,6 +520,75 @@ VRM AI Technology (OPC) Pvt. Ltd.`
     ],
     whatsappTemplate: process.env.WHATSAPP_TEMPLATE_RECRUITMENT || 'workflow',
     whatsappLanguage: 'en'
+  },
+
+  vrm_product: {
+    subject: VRM_PRODUCT_SUBJECT,
+    email: VRM_PRODUCT_EMAIL,
+    followUps: [
+      {
+        subject: 'Following Up: AI Products from VRM AI Technology',
+        email: `Dear [Name],
+
+I hope you are doing well.
+
+I am following up on my earlier email about VRM AI Technology's AI products: Workflow AI, Bench to Deploy, AI Buddy, People Connect (Global), Visionix SI and Exit Intelligence.
+
+If any of these could help your team, we would be glad to arrange a short demo.
+
+Book a Demo:
+https://vrmaitechnology.com/contactus/#send-message-section
+
+We also have a referral programme for organisations that connect us with potential clients. Please let us know if you would be interested in learning more.
+
+Thank you for your time.
+
+Warm regards,
+VRM AI Technology (OPC) Pvt. Ltd.`
+      },
+      {
+        subject: 'Could Our AI Products Support Your Team?',
+        email: `Dear [Name],
+
+I hope you are well.
+
+Just checking in regarding our AI products from VRM AI Technology. Whether your focus is hiring automation, bench utilisation, language and communication training, global talent connections, or employee exit insights, we have a product that can help.
+
+Book a Demo:
+https://vrmaitechnology.com/contactus/#send-message-section
+
+If these are not relevant at this stage, we would appreciate a referral to someone who may find them useful.
+
+We also have a referral programme for organisations that connect us with potential clients. Please let us know if you would be interested in learning more.
+
+Thank you for your time.
+
+Warm regards,
+VRM AI Technology (OPC) Pvt. Ltd.`
+      },
+      {
+        subject: 'Final Follow-Up: VRM AI Technology Products',
+        email: `Dear [Name],
+
+I hope you are well.
+
+This is my final follow-up regarding VRM AI Technology's AI products. We understand every organisation has different priorities, and we would be grateful for the opportunity to show how our solutions can help.
+
+Book a Demo:
+https://vrmaitechnology.com/contactus/#send-message-section
+
+If these are not relevant to your current needs, we would sincerely appreciate a referral to someone who may benefit.
+
+We also have a referral programme for organisations that connect us with potential clients. Please let us know if you would be interested in learning more.
+
+Thank you for your time and consideration.
+
+Warm regards,
+VRM AI Technology (OPC) Pvt. Ltd.`
+      }
+    ],
+    whatsappTemplate: process.env.WHATSAPP_TEMPLATE_IT || 'workflow',
+    whatsappLanguage: 'en'
   }
 };
 
@@ -441,6 +599,9 @@ const PRODUCT_ALIASES = {
   nonit: 'non_it',
   bpo: 'bpo',
   recruitment: 'recruitment',
+  'vrm product': 'vrm_product',
+  vrm_product: 'vrm_product',
+  vrmproduct: 'vrm_product',
   // legacy aliases kept for backward compatibility
   workflow_ai: 'it',
   workflowai: 'it',

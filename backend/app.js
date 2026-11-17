@@ -9,7 +9,7 @@ const routes = require('./routes/index');
 const { requireAuth } = require('./middleware/auth');
 const linkedinRoutes = require('./routes/linkedinRoutes');
 const companyRoutes = require('./routes/companyRoutes');
-
+const { runFollowUpReminders } = require('./services/followUpReminderService');
 const { runFollowUpEmailCheck } = require('./services/followUpService');
 const { runWhatsAppReplyFollowUpCheck } = require('./services/whatsappReplyFollowUpService');
 const { runAutoCallCheck } = require('./services/autoCallService');
@@ -97,7 +97,20 @@ if (process.env.ENABLE_FOLLOW_UP_CRON === 'true') {
     'Automatic follow-up cron disabled. Use /api/follow-ups/check to run follow-ups manually.'
   );
 }
-
+if (process.env.ENABLE_REMINDER_CRON !== 'false') {
+  cron.schedule(
+    '* * * * *',
+    async () => {
+      try {
+        await runFollowUpReminders();
+      } catch (error) {
+        console.error('Follow-up reminder cron error:', error.message);
+      }
+    },
+    { timezone: 'Asia/Kolkata' }
+  );
+  console.log('Follow-up reminder cron enabled (IST).');
+}
 // WhatsApp reply follow-up: the webhook/button-click routes already trigger
 // this immediately when a reply comes in, but that depends on Meta's webhook
 // actually reaching this server. As a continuous safety net (not just a

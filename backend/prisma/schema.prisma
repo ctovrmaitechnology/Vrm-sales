@@ -60,6 +60,8 @@ model leads {
   followup_set_at   DateTime?       @db.Timestamptz(6)
   followup_note_clean String?
   followup_mode     String?
+  followup_time     String?
+  followup_priority String?
   interested_at     DateTime?       @db.Timestamptz(6)
   lead_status_at    DateTime?       @db.Timestamptz(6)
   owner             users?          @relation("OwnedLeads", fields: [user_id], references: [id], onDelete: SetNull)
@@ -198,4 +200,25 @@ model call_history {
   updated_at    DateTime? @db.Timestamptz(6)
     trigger_source String? @default("manual")
     
+}
+model followup_reminders {
+  id             Int       @id @default(autoincrement())
+  dedupe_key     String    @unique
+  reminder_type  String
+  lead_id        Int?
+  user_id        Int?
+  recipient_email String?
+  followup_date  DateTime? @db.Date
+  followup_time  String?
+  priority       String?
+  status         String    @default("pending")
+  attempts       Int       @default(0)
+  error          String?
+  scheduled_for  DateTime? @db.Timestamptz(6)
+  sent_at        DateTime? @db.Timestamptz(6)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([status])
+  @@index([lead_id])
 }
