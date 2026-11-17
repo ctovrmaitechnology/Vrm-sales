@@ -372,6 +372,8 @@ const Leads = () => {
   };
   const [followupLead, setFollowupLead] = useState(null);
   const [followupDate, setFollowupDate] = useState('');
+    const [followupTime, setFollowupTime] = useState('');
+  const [followupPriority, setFollowupPriority] = useState('Active');
   const [followupNote, setFollowupNote] = useState('');
   const [followupMode, setFollowupMode] = useState('call');
   const [followupSaving, setFollowupSaving] = useState(false);
@@ -406,6 +408,8 @@ const Leads = () => {
   const openFollowup = (item) => {
     setFollowupLead(item);
     setFollowupDate(item.followup_date ? String(item.followup_date).slice(0, 10) : '');
+        setFollowupTime(item.followup_time || '');
+    setFollowupPriority(item.followup_priority || 'Active');
     setFollowupNote(item.followup_note || '');
     setFollowupMode(item.followup_mode || 'call');
     setFollowupError('');
@@ -414,10 +418,11 @@ const Leads = () => {
 
   const saveFollowup = async () => {
     if (!followupDate) { setFollowupError('Please pick a follow-up date.'); return; }
+        if (!followupTime) { setFollowupError('Please pick a follow-up time.'); return; }
     setFollowupSaving(true);
     setFollowupError('');
     try {
-      await patchStatusFollowup(followupLead.id, { followup_date: followupDate, followup_note: followupNote, followup_mode: followupMode });
+      await patchStatusFollowup(followupLead.id, { followup_date: followupDate, followup_time: followupTime, followup_priority: followupPriority, followup_note: followupNote, followup_mode: followupMode });
       closeFollowup();
     } catch (err) {
       setFollowupError(err.message);
@@ -1827,6 +1832,23 @@ const Leads = () => {
               <option value="email">Email</option>
               <option value="whatsapp">WhatsApp</option>
               <option value="meeting">Meeting</option>
+            </select>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Follow-up time (IST)</label>
+            <input
+              type="time"
+              value={followupTime}
+              onChange={(e) => setFollowupTime(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '0.85rem' }}
+            />
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Priority</label>
+            <select
+              value={followupPriority}
+              onChange={(e) => setFollowupPriority(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '0.85rem', background: '#fff' }}
+            >
+              <option value="Critical">Critical</option>
+              <option value="Active">Active</option>
+              <option value="Nurture">Nurture</option>
             </select>
             <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Notes</label>
             <textarea
