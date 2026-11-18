@@ -49,21 +49,27 @@ const LEAD_SELECT = {
 };
 const NOT_CONVERTED = [{ lead_status: null }, { lead_status: { not: 'converted' } }];
 
-// ---- email sending (same Brevo account/sender as the rest of the app) ----
-async function sendHtmlEmail({ to, toName, subject, html }) {
-  if (!process.env.BREVO_API_KEY) throw new Error('BREVO_API_KEY is not set');
-  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+// ---- email sending (Resend) ----
+let lastResendAt = 0;
+async function sendHtmlEmail({ to, subject, html }) {
+  if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not set');
+  // Resend allows about 2 requests per second: keep a small gap between mails
+  const wait = 600 - (Date.now() - lastResendAt);
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  lastResendAt = Date.now();
+  const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { accept: 'application/json', 'api-key': process.env.BREVO_API_KEY, 'content-type': 'application/json' },
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      sender: { name: 'VRM Team', email: SENDER_EMAIL },
-      to: [{ email: to, name: toName }],
+      from: process.env.RESEND_FROM || `VRM Team <${SENDER_EMAIL}>`,
+      to: [to],
+      reply_to: SENDER_EMAIL,
       subject,
-      htmlContent: html,
-      textContent: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+      html,
+      text: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
     }),
   });
-  if (!response.ok) throw new Error(`Brevo ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  if (!response.ok) throw new Error(`Resend ${response.status}: ${(await response.text()).slice(0, 300)}`);
 }
 
 // ---- duplicate protection + logging ----
@@ -202,6 +208,7 @@ async function sendBeforeReminders(now = new Date()) {
   }
   return { checked: leads.length, sent };
 }
+
 // Manual trigger (Users page): send today's follow-up summary now to one user or to everyone.
 async function sendManualSummaries(target, now = new Date()) {
   const { date } = istParts(now);
@@ -244,6 +251,7 @@ async function sendManualSummaries(target, now = new Date()) {
   }
   return { sent, failed, noEmail, message };
 }
+
 let running = false;
 async function runFollowUpReminders(now = new Date()) {
   if (running) return { skipped: true };
@@ -255,4 +263,4 @@ async function runFollowUpReminders(now = new Date()) {
   } finally { running = false; }
 }
 
-module.exports = { runFollowUpReminders, sendDailySummaries, sendBeforeReminders, sendManualSummaries};
+module.exports = { runFollowUpReminders, sendDailySummaries, sendBeforeReminders, sendManualSummaries };
