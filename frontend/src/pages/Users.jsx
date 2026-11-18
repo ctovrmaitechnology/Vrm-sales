@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, RefreshCw, Download, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Download, Trash2, Pencil } from 'lucide-react';
 import Button from '../components/Button';
 import TeamsPanel from '../components/TeamsPanel';
 import { ROLE_LABELS, getUser, isAdmin } from '../utils/auth';
@@ -156,6 +156,29 @@ const [deletingId, setDeletingId] = useState(null);
     setDeletingId(null);
   }
 };
+  const renameEmployee = async (user) => {
+    const input = window.prompt('Edit employee name:', user.employee_name || '');
+    if (input === null) return;
+    const newName = input.trim();
+    if (!newName || newName === user.employee_name) return;
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch(apiUrl(`/api/users/${user.id}/name`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employee_name: newName }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || 'Failed to rename employee.');
+      await queryClient.invalidateQueries({ queryKey: ['team-report'] });
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await queryClient.invalidateQueries({ queryKey: ['overview-stats'] });
+      setNotice(`Renamed to ${newName}.`);
+    } catch (renameError) {
+      setError(renameError.message);
+    }
+  };
   const refreshHistory = () => historyQuery.refetch();
   const downloaddailyReport = async () => {
      setExporting(true);
@@ -548,6 +571,14 @@ const [deletingId, setDeletingId] = useState(null);
                           </Button>
                         )}
                         {admin && (<>
+                        <button
+                          type="button"
+                          title="Edit name"
+                          onClick={() => renameEmployee(user)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0.4rem 0.75rem', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', borderRadius: 8, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          <Pencil size={14} /> Edit
+                        </button>
                         <button
                           type="button"
                           title="Delete employee"

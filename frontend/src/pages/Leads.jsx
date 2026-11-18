@@ -30,7 +30,23 @@ import CategoryDropdown from '../components/CategoryDropdown';
 import FollowupBell from '../components/FollowupBell';
 import '../styles/leads.css';
 import '../styles/whatsapp.css';
-import { isAdmin } from '../utils/auth';
+import { isAdmin, isSuperAdmin, isTeamLead, getUser } from '../utils/auth';
+
+
+// Compact page list: 1 … 4 5 [6] 7 8 … 30 (never more than ~9 buttons)
+const getPageList = (page, count) => {
+  if (count <= 7) return Array.from({ length: count }, (_, i) => i + 1);
+  const pages = new Set([1, count, page - 1, page, page + 1]);
+  if (page <= 3) { pages.add(2); pages.add(3); pages.add(4); }
+  if (page >= count - 2) { pages.add(count - 1); pages.add(count - 2); pages.add(count - 3); }
+  const sorted = [...pages].filter((p) => p >= 1 && p <= count).sort((a, b) => a - b);
+  const out = [];
+  sorted.forEach((p, i) => {
+    if (i > 0 && p - sorted[i - 1] > 1) out.push('gap-' + p);
+    out.push(p);
+  });
+  return out;
+};
 
 const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${BACKEND_BASE_URL}${path}`;
@@ -154,6 +170,8 @@ const FOLLOWUP_TONES = {
 const Leads = () => {
   const queryClient = useQueryClient();
   const admin = isAdmin();
+  const superAdmin = isSuperAdmin(); // only super admin can bulk-delete
+  const canImport = admin || isTeamLead() || getUser()?.role === 'caller';
   const manualLeadsQuery = useQuery({
     queryKey: ['manual-leads'],
     queryFn: async () => {
@@ -372,10 +390,7 @@ const Leads = () => {
   };
   const [followupLead, setFollowupLead] = useState(null);
   const [followupDate, setFollowupDate] = useState('');
-    const [followupTime, setFollowupTime] = useState('');
-  const [followupPriority, setFollowupPriority] = useState('Active');
   const [followupNote, setFollowupNote] = useState('');
-  const [followupMode, setFollowupMode] = useState('call');
   const [followupSaving, setFollowupSaving] = useState(false);
   const [followupError, setFollowupError] = useState('');
   const [statusSavingId, setStatusSavingId] = useState(null);
@@ -408,21 +423,17 @@ const Leads = () => {
   const openFollowup = (item) => {
     setFollowupLead(item);
     setFollowupDate(item.followup_date ? String(item.followup_date).slice(0, 10) : '');
-        setFollowupTime(item.followup_time || '');
-    setFollowupPriority(item.followup_priority || 'Active');
     setFollowupNote(item.followup_note || '');
-    setFollowupMode(item.followup_mode || 'call');
     setFollowupError('');
   };
   const closeFollowup = () => { setFollowupLead(null); setFollowupError(''); };
 
   const saveFollowup = async () => {
     if (!followupDate) { setFollowupError('Please pick a follow-up date.'); return; }
-        if (!followupTime) { setFollowupError('Please pick a follow-up time.'); return; }
     setFollowupSaving(true);
     setFollowupError('');
     try {
-      await patchStatusFollowup(followupLead.id, { followup_date: followupDate, followup_time: followupTime, followup_priority: followupPriority, followup_note: followupNote, followup_mode: followupMode });
+      await patchStatusFollowup(followupLead.id, { followup_date: followupDate, followup_note: followupNote });
       closeFollowup();
     } catch (err) {
       setFollowupError(err.message);
@@ -575,10 +586,7 @@ const Leads = () => {
   const startIndex = totalResults === 0 ? 0 : (leadPagination.page - 1) * leadPagination.pageSize + 1;
   const endIndex = Math.min(leadPagination.page * leadPagination.pageSize, totalResults);
   const totalPages = Math.max(1, Math.ceil(totalResults / leadPagination.pageSize));
-  const pageNumbers = [];
-  for (let i = 1; i <= totalPages; i++) {
-    pageNumbers.push(i);
-  }
+  const pageNumbers = getPageList(leadPagination.page, totalPages);
 
   return (
     <div className="leads-page-container">
@@ -591,7 +599,7 @@ const Leads = () => {
       </div>
       <div className="flex items-center justify-between mb-6" style={{ flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-{admin && (
+          {canImport && (
           <ExcelImportControls
             entity="lead"
             users={users}
@@ -603,7 +611,7 @@ const Leads = () => {
               queryClient.invalidateQueries({ queryKey: ['global-search'] }),
             ])}
           />
-)}
+          )}
           <Button
             variant="primary"
             icon={<Plus size={16} />}
@@ -831,18 +839,18 @@ const Leads = () => {
       </div>
 
       {/* Selection Banner */}
-      {admin && selectedIds.size > 0 && (
+      {superAdmin && selectedIds.size > 0 && (
         <div className="wa-selection-banner" style={{ marginBottom: '1rem' }}>
           <div className="wa-selection-info">
             <CheckSquare size={16} />
             <span>{selectedIds.size} lead{selectedIds.size === 1 ? '' : 's'} selected</span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem' }}>
             <button
               type="button"
               onClick={() => setSelectedIds(new Set())}
-              style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.82rem', cursor: 'pointer', textDecoration: 'underline' }}
+              style={{ display:'inline-flex', alignItems:'center', padding:'0.45rem 1rem', borderRadius:'8px', border:'1px solid #cbd5e1', background:'#f1f5f9', color:'#334155', fontSize:'0.82rem', fontWeight:600, cursor:'pointer' }}
             >
               Deselect all
             </button>
@@ -852,8 +860,8 @@ const Leads = () => {
               disabled={bulkDeleting}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
-                padding: '0.35rem 0.8rem', borderRadius: '8px',
-                border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626',
+                padding: '0.45rem 1rem', borderRadius: '8px',
+                border: '1px solid #dc2626', background: '#dc2626', color: '#ffffff',
                 fontSize: '0.82rem', fontWeight: 600,
                 cursor: bulkDeleting ? 'not-allowed' : 'pointer',
                 opacity: bulkDeleting ? 0.6 : 1,
@@ -871,14 +879,14 @@ const Leads = () => {
             <thead>
               <tr>
                 <th style={{ width: '36px', textAlign: 'center', paddingLeft: '0.65rem' }}>
-{admin && (
+                  {superAdmin && (
                   <input
                     type="checkbox"
                     aria-label="Select all leads on this page"
                     checked={allOnPageSelected}
                     onChange={toggleSelectAll}
                   />
-)}
+                  )}
                 </th>
                 <th style={{ width: '48px', textAlign: 'center' }}>S.NO</th>
                 <th style={{ width: '11%' }} className="leads-th-sortable" onClick={() => handleSort('full_name')}>
@@ -944,14 +952,14 @@ const Leads = () => {
                   return (
                     <tr key={item.id} className={isChecked ? 'wa-row-selected' : ''}>
                       <td style={{ textAlign: 'center' }}>
-{admin && (
+                        {superAdmin && (
                         <input
                           type="checkbox"
                           aria-label={`Select ${item.full_name || 'lead'}`}
                           checked={isChecked}
                           onChange={() => toggleSelectOne(item.id)}
                         />
-)}
+                        )}
                       </td>
                       <td style={{ textAlign: 'center', fontWeight: 600, color: '#64748b', fontSize: '0.84rem' }}>
                         {startIndex + idx}
@@ -1076,7 +1084,7 @@ const Leads = () => {
                           return (
                             <button
                               type="button"
-                              title={item.followup_note_clean || item.followup_note || ''}
+                              title={item.followup_note || ''}
                               onClick={() => openFollowup(item)}
                               style={{ fontSize: '0.76rem', fontWeight: 600, padding: '3px 10px', borderRadius: '7px', cursor: 'pointer', whiteSpace: 'nowrap', ...FOLLOWUP_TONES[tone] }}
                             >
@@ -1084,16 +1092,6 @@ const Leads = () => {
                             </button>
                           );
                         })()}
-                        {(item.followup_mode || item.followup_emails_sent > 0 || item.followup_note) && (
-                          <div style={{ marginTop: '3px', fontSize: '0.7rem', color: '#64748b', lineHeight: 1.3, maxWidth: '170px', whiteSpace: 'normal' }}>
-                            {item.followup_mode && <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{item.followup_mode}</span>}
-                            {item.followup_mode && ' · '}
-                            Emails sent: {item.followup_emails_sent || 0}/3
-                            {(item.followup_note_clean || item.followup_note) && (
-                              <div style={{ color: '#475569' }}>{item.followup_note_clean || item.followup_note}</div>
-                            )}
-                          </div>
-                        )}
                       </td>
                       {/* ADDED */}
                       <td style={{ whiteSpace: 'nowrap' }}>
@@ -1151,7 +1149,7 @@ const Leads = () => {
                           >
                             <Pencil size={13} />
                           </button>
-{admin && (
+                          {admin && (
                           <button
                             type="button"
                             title="Delete lead"
@@ -1173,7 +1171,7 @@ const Leads = () => {
                           >
                             <Trash2 size={13} />
                           </button>
-)}
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1234,14 +1232,18 @@ const Leads = () => {
             </button>
 
             {pageNumbers.map((p) => (
-              <button
-                key={p}
-                type="button"
-                className={`wa-pg-num-btn ${leadPagination.page === p ? 'wa-pg-num-active' : ''}`}
-                onClick={() => leadPagination.setPage(p)}
-              >
-                {p}
-              </button>
+              typeof p === 'string' ? (
+                <span key={p} style={{ padding: '0 4px', color: '#94a3b8' }}>…</span>
+              ) : (
+                <button
+                  key={p}
+                  type="button"
+                  className={`wa-pg-num-btn ${leadPagination.page === p ? 'wa-pg-num-active' : ''}`}
+                  onClick={() => leadPagination.setPage(p)}
+                >
+                  {p}
+                </button>
+              )
             ))}
 
             <button
@@ -1822,34 +1824,6 @@ const Leads = () => {
               onChange={(e) => setFollowupDate(e.target.value)}
               style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '0.85rem' }}
             />
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Mode</label>
-            <select
-              value={followupMode}
-              onChange={(e) => setFollowupMode(e.target.value)}
-              style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '0.85rem' }}
-            >
-              <option value="call">Call</option>
-              <option value="email">Email</option>
-              <option value="whatsapp">WhatsApp</option>
-              <option value="meeting">Meeting</option>
-            </select>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Follow-up time (IST)</label>
-            <input
-              type="time"
-              value={followupTime}
-              onChange={(e) => setFollowupTime(e.target.value)}
-              style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '0.85rem' }}
-            />
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Priority</label>
-            <select
-              value={followupPriority}
-              onChange={(e) => setFollowupPriority(e.target.value)}
-              style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '0.85rem', background: '#fff' }}
-            >
-              <option value="Critical">Critical</option>
-              <option value="Active">Active</option>
-              <option value="Nurture">Nurture</option>
-            </select>
             <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Notes</label>
             <textarea
               value={followupNote}
