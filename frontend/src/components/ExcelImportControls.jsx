@@ -77,11 +77,6 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
       input.value = '';
       return;
     }
-    if (!userId) {
-      setError('Please select an assigned user before uploading.');
-      input.value = '';
-      return;
-    }
     if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
       setError('Choose an .xlsx, .xls, or .csv file.');
       input.value = '';
@@ -98,7 +93,7 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
     try {
       const body = new FormData();
       body.append('file', file);
-      body.append('user_id', userId);
+      if (userId) body.append('user_id', userId); // optional: server uses the uploader / the Excel's Assigned User column
       const response = await fetch(apiUrl(`${endpoint}/import`), { method: 'POST', body });
       const contentType = response.headers.get('content-type') || '';
       let result = null;
@@ -272,7 +267,7 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
       {/* Upload Excel Button */}
       <label
         className="btn btn-secondary"
-        aria-disabled={uploading || !userId}
+        aria-disabled={uploading}
         style={{
           position: 'relative',
           overflow: 'hidden',
@@ -282,8 +277,8 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
           padding: '0.5rem 0.85rem',
           borderRadius: '8px',
           fontSize: '0.85rem',
-          opacity: uploading || !userId ? 0.6 : 1,
-          cursor: uploading || !userId ? 'not-allowed' : 'pointer',
+          opacity: uploading ? 0.6 : 1,
+          cursor: uploading ? 'not-allowed' : 'pointer',
           whiteSpace: 'nowrap',
         }}
       >
@@ -297,7 +292,7 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
           type="file"
           accept=".xlsx,.xls,.csv"
           onChange={uploadFile}
-          disabled={uploading || !userId}
+          disabled={uploading}
           aria-label="Choose Excel or CSV file to upload"
           style={{
             position: 'absolute',
@@ -305,7 +300,7 @@ const ExcelImportControls = ({ entity, users, onImported }) => {
             width: '100%',
             height: '100%',
             opacity: 0,
-            cursor: uploading || !userId ? 'not-allowed' : 'pointer',
+            cursor: uploading ? 'not-allowed' : 'pointer',
           }}
         />
       </label>

@@ -656,5 +656,23 @@ async function exportdailyReport(req, res) {
     return res.status(500).json({ success: false, error: 'Failed to build the daily report.' });
   }
 }
-
-module.exports = { getUsers, getTeamReport, createUser, getAccessUsers, setUserLogin, getUserHistory, exportdailyReport, deleteUser };
+async function renameUser(req, res) {
+  const id = Number(req.params.id);
+  const employeeName = typeof req.body?.employee_name === 'string' ? req.body.employee_name.trim() : '';
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ success: false, error: 'Invalid user ID.' });
+  if (!employeeName || employeeName.length > 255) {
+    return res.status(400).json({ success: false, error: 'Employee name is required and must be 255 characters or fewer.' });
+  }
+  try {
+    const user = await prisma.users.update({
+      where: { id },
+      data: { employee_name: employeeName, updated_at: new Date() },
+      select: { id: true, employee_name: true },
+    });
+    return res.json({ success: true, data: user });
+  } catch (error) {
+    console.error('Failed to rename employee:', error);
+    return res.status(500).json({ success: false, error: 'Failed to rename employee.' });
+  }
+}
+module.exports = { getUsers, getTeamReport, createUser, getAccessUsers, setUserLogin, getUserHistory, exportdailyReport, deleteUser, renameUser };

@@ -17,6 +17,21 @@ const API_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
 const EMPTY_LIST = [];
 
+// Compact page list: 1 … 4 5 [6] 7 8 … 30 (never more than ~9 buttons)
+const getPageList = (page, count) => {
+  if (count <= 7) return Array.from({ length: count }, (_, i) => i + 1);
+  const pages = new Set([1, count, page - 1, page, page + 1]);
+  if (page <= 3) { pages.add(2); pages.add(3); pages.add(4); }
+  if (page >= count - 2) { pages.add(count - 1); pages.add(count - 2); pages.add(count - 3); }
+  const sorted = [...pages].filter((p) => p >= 1 && p <= count).sort((a, b) => a - b);
+  const out = [];
+  sorted.forEach((p, i) => {
+    if (i > 0 && p - sorted[i - 1] > 1) out.push('gap-' + p);
+    out.push(p);
+  });
+  return out;
+};
+
 const AVATAR_PALETTES = [
   { bg: '#dbeafe', color: '#1d4ed8' }, // Blue
   { bg: '#ffe4e6', color: '#e11d48' }, // Rose/Red
@@ -301,7 +316,9 @@ export default function Dashboard() {
   const leadPagination = useTablePagination(unsentLeads);
   const sentPagination = useTablePagination(sentTableFilters.filteredItems);
 
-  const selectableLeads = unsentLeads.filter((lead) => lead.email);
+  // Select-all only applies to the rows visible on the current page
+  const selectableLeads = leadPagination.pageItems.filter((lead) => lead.email);
+  const selectableCompanies = companyPagination.pageItems.filter((company) => company.email);
   const totalLeadsCount = filteredLeads.filter((lead) => !lead.isCompanyContact).length;
   const totalCompaniesCount = filteredCompanies.length;
   const selectedLeadCount = selectedEmails.length;
@@ -566,15 +583,19 @@ export default function Dashboard() {
         >
           <ChevronLeft size={16} />
         </button>
-        {Array.from({ length: pagination.pageCount }, (_, i) => i + 1).map((p) => (
-          <button
-            key={p}
-            type="button"
-            className={`wa-pg-num-btn ${p === pagination.page ? 'wa-pg-num-active' : ''}`}
-            onClick={() => pagination.setPage(p)}
-          >
-            {p}
-          </button>
+        {getPageList(pagination.page, pagination.pageCount).map((p) => (
+          typeof p === 'string' ? (
+            <span key={p} style={{ padding: '0 4px', color: '#94a3b8' }}>…</span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              className={`wa-pg-num-btn ${p === pagination.page ? 'wa-pg-num-active' : ''}`}
+              onClick={() => pagination.setPage(p)}
+            >
+              {p}
+            </button>
+          )
         ))}
         <button
           type="button"
@@ -845,12 +866,12 @@ export default function Dashboard() {
             <CheckCheck size={16} />
             <span>{selectedCount} contact{selectedCount === 1 ? '' : 's'} selected</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem' }}>
             {currentPage === 'leads' && (
               <button
                 type="button"
                 onClick={deleteSelectedLeads}
-                className="wa-btn-danger"
+                style={{ display:'inline-flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 1rem', borderRadius:'8px', border:'1px solid #dc2626', background:'#dc2626', color:'#ffffff', fontSize:'0.82rem', fontWeight:600, cursor:'pointer' }}
               >
                 Delete selected
               </button>
@@ -861,15 +882,7 @@ export default function Dashboard() {
                 if (currentPage === 'companies') setSelectedCompanyIds([]);
                 if (currentPage === 'leads') setSelectedEmails([]);
               }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#64748b',
-                cursor: 'pointer',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                padding: '0.35rem 0.6rem',
-              }}
+              style={{ display:'inline-flex', alignItems:'center', padding:'0.45rem 1rem', borderRadius:'8px', border:'1px solid #cbd5e1', background:'#f1f5f9', color:'#334155', fontSize:'0.82rem', fontWeight:600, cursor:'pointer' }}
             >
               Deselect all
             </button>
@@ -887,14 +900,12 @@ export default function Dashboard() {
                   <th style={{ width: '40px', textAlign: 'center', padding: '0.5rem 0.25rem' }}>
                     <input
                       type="checkbox"
-                      aria-label="Select all unsent company contacts"
+                      aria-label="Select all company contacts on this page"
                       disabled={sendingEmails}
-                      checked={unsentCompanies.filter((company) => company.email).length > 0
-                        && unsentCompanies.filter((company) => company.email).every((company) => selectedCompanyIds.includes(company.id))}
+                      checked={selectableCompanies.length > 0
+                        && selectableCompanies.every((company) => selectedCompanyIds.includes(company.id))}
                       onChange={(event) => {
-                        const eligibleIds = unsentCompanies
-                          .filter((company) => company.email)
-                          .map((company) => company.id);
+                        const eligibleIds = selectableCompanies.map((company) => company.id);
                         setSelectedCompanyIds((current) => event.target.checked
                           ? [...new Set([...current, ...eligibleIds])]
                           : current.filter((id) => !eligibleIds.includes(id)));

@@ -1,5 +1,5 @@
 const express = require('express');
-const { getUsers, getTeamReport, createUser, getAccessUsers, setUserLogin, getUserHistory, exportdailyReport, deleteUser } = require('../controllers/usersController');
+const { getUsers, getTeamReport,createUser, renameUser, getAccessUsers, setUserLogin, getUserHistory, exportdailyReport, deleteUser } = require('../controllers/usersController');
 const { requireRole } = require('../middleware/auth');
 const { sendManualSummaries } = require('../services/followUpReminderService');
 const router = express.Router();
@@ -23,4 +23,5 @@ router.get('/daily-report', requireRole('admin'), exportdailyReport);
 router.get('/:id/history', getUserHistory); // scoped inside the controller
 router.put('/:id/login', requireRole('super_admin'), setUserLogin);
 router.delete('/:id', requireRole('admin'), deleteUser);
+router.put('/:id/name', requireRole('admin'), renameUser);
 module.exports = router;

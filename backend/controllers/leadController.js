@@ -54,22 +54,16 @@ async function getImportUserId(row, selectedUser, usersByName) {
 }
 
 async function sendLeadTemplate(req, res) {
-  const userId = Number(req.query.user_id);
+  const userId = Number(req.query.user_id) || req.user?.id;
   const source = typeof req.query.source === 'string' ? req.query.source.trim() : '';
-  if (!source) {
-    return res.status(400).json({ error: 'Select a source before downloading the template.' });
-  }
-  if (!Number.isInteger(userId) || userId < 1) {
-    return res.status(400).json({ error: 'Select an assigned user before downloading the template.' });
-  }
   try {
     const user = await getActiveUserById(userId);
-    if (!user) return res.status(400).json({ error: 'Selected employee was not found or is inactive.' });
+
     sendTemplate(res, {
       filename: 'leads_template.xlsx',
       sheetName: 'Leads',
       columns: LEAD_TEMPLATE_COLUMNS,
-      assignedUserName: user.employee_name,
+      assignedUserName: user?.employee_name || '',
       source,
     });
   } catch (error) {
@@ -84,11 +78,14 @@ async function importManualLeads(req, res) {
   }
 
   try {
-    const selectedUser = await getSelectedImportUser(req.body?.user_id);
+    // Assigned user is optional: fall back to the person uploading
+    const selectedUser =
+      (await getSelectedImportUser(req.body?.user_id)) ||
+      (await getActiveUserById(req.user.id));
     if (!selectedUser) {
-      return res.status(400).json({ error: 'Select a valid active employee for this upload.' });
+      return res.status(400).json({ error: 'Your user account is not active.' });
     }
-
+    const importScope = await getScopeUserIds(req.user);
     const rows = readImportRows(req.file.buffer);
     const activeUsers = await prisma.users.findMany({
       where: { is_active: true },
@@ -160,6 +157,11 @@ async function importManualLeads(req, res) {
       const userId = await getImportUserId(row, selectedUser, usersByName);
       if (!userId) {
         errors.push({ row: index + 2, name: full_name, error: 'Assigned User Name does not match an active employee.' });
+        writeImportProgress(res, ++processed, rows.length);
+        continue;
+      }
+      if (!inScope(importScope, userId)) {
+        errors.push({ row: index + 2, name: full_name, error: 'You can only upload leads for yourself or your team members.' });
         writeImportProgress(res, ++processed, rows.length);
         continue;
       }

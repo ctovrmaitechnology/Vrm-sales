@@ -68,7 +68,8 @@ function requireRole(...roles) {
 // team lead = their whole team, caller = only themselves.
 async function getScopeUserIds(user) {
   if (user.role === 'admin' || user.role === 'super_admin') return null;
-  if (user.role === 'team_lead' && user.team_id) {
+  // anyone who belongs to a team (team lead OR caller) sees the whole team
+  if (user.team_id) {
     const members = await prisma.users.findMany({
       where: { team_id: user.team_id, is_active: true },
       select: { id: true },

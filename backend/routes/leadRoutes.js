@@ -28,7 +28,7 @@ const handleImportUpload = (req, res, next) => {
 
 router.get('/ingestion/all', getAllLeads);
 router.get('/manual-leads/template', sendLeadTemplate);
-router.post('/manual-leads/import', adminOnly, handleImportUpload, importManualLeads);
+router.post('/manual-leads/import', requireRole('admin', 'team_lead', 'caller'), handleImportUpload, importManualLeads);
 router.get('/manual-leads', getManualLeadsController);
 router.post('/manual-leads', createManualLeadController);
 router.put('/manual-leads/:id', updateManualLeadController);
@@ -36,7 +36,7 @@ router.patch('/manual-leads/:id/status-followup', updateLeadStatusFollowup);
 router.get('/lead-followups', getLeadFollowups);
 router.patch('/manual-leads/:id/call-status', updateLeadCallStatus);
 router.delete('/manual-leads/:id', adminOnly, deleteManualLeadController);
-router.post('/manual-leads/bulk-delete', adminOnly, bulkDeleteManualLeads);
+router.post('/manual-leads/bulk-delete', requireRole('super_admin'), bulkDeleteManualLeads);
 router.get('/ingestion/whatsapp', getWhatsAppLeads);
 router.get('/ingestion/email', getEmailLeads);
 router.patch('/lead/:email/status', updateStatus);
