@@ -15,8 +15,12 @@ export default function useTableFilters(items, { searchFields = [], facets = [],
 
   const facetOptions = useMemo(() => facets.map((facet) => {
     if (facet.options) return { ...facet, options: facet.options };
+    // a facet may supply getValues(item) -> array, so one row can match several filter values
     const values = new Set(
-      items.map((item) => normalize(getValue(item, facet.field))).filter(Boolean)
+      items
+        .flatMap((item) => (facet.getValues ? facet.getValues(item) : [getValue(item, facet.field)]))
+        .map(normalize)
+        .filter(Boolean)
     );
     return {
       ...facet,
@@ -33,7 +37,9 @@ export default function useTableFilters(items, { searchFields = [], facets = [],
 
       if (facets.some((facet) => {
         const selected = selectedFacets[facet.key];
-        return selected && normalize(getValue(item, facet.field)) !== selected;
+        if (!selected) return false;
+        if (facet.getValues) return !facet.getValues(item).map(normalize).includes(selected);
+        return normalize(getValue(item, facet.field)) !== selected;
       })) return false;
 
       if (dateField && (fromDate || toDate)) {

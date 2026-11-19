@@ -52,7 +52,9 @@ model leads {
   is_called         Boolean         @default(false)
   called_by_user_id Int?
   called_at         DateTime?       @db.Timestamptz(6)
-  
+    transferred_at            DateTime?       @db.Timestamptz(6)
+  transferred_from_user_id  Int?
+  transferred_from_team_id  Int?
     lead_status       String?
   converted_at      DateTime?       @db.Timestamptz(6)
   followup_date     DateTime?       @db.Date
@@ -221,4 +223,36 @@ model followup_reminders {
 
   @@index([status])
   @@index([lead_id])
+}
+model lead_transfers {
+  id                     Int      @id @default(autoincrement())
+  batch_id               String
+  lead_id                Int
+  from_user_id           Int?
+  to_user_id             Int?
+  from_team_id           Int?
+  to_team_id             Int?
+  transferred_by_user_id Int?
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([lead_id])
+  @@index([from_user_id])
+  @@index([to_user_id])
+  @@index([created_at])
+}
+model lead_requests {
+  id              Int       @id @default(autoincrement())
+  from_user_id    Int
+  to_user_id      Int
+  leads_requested Int
+  note            String?
+  status          String    @default("pending")
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  done_at         DateTime? @db.Timestamptz(6)
+  done_by_user_id Int?
+
+  @@index([from_user_id])
+  @@index([to_user_id])
+  @@index([status])
+  @@index([created_at])
 }
