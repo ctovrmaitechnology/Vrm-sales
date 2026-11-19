@@ -1,12 +1,14 @@
 const express = require('express');
 const { requireRole } = require('../middleware/auth');
 const adminOnly = requireRole('admin');
+
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { getAllLeads, getManualLeadsController, createManualLeadController, updateManualLeadController, deleteManualLeadController, bulkDeleteManualLeads, updateLeadCallStatus, getWhatsAppLeads, getEmailLeads, updateStatus, deleteLead, uploadLeads, uploadSingleLead, sendLeadTemplate, importManualLeads } = require('../controllers/leadController');
 const { updateLeadStatusFollowup, getLeadFollowups } = require('../controllers/leadController');
+const { getTransferTargets, transferLeads, getLeadHistory } = require('../controllers/transferController');
 const uploadDir = path.join(__dirname, '../uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({ dest: uploadDir });
@@ -30,6 +32,9 @@ router.get('/ingestion/all', getAllLeads);
 router.get('/manual-leads/template', sendLeadTemplate);
 router.post('/manual-leads/import', requireRole('admin', 'team_lead', 'caller'), handleImportUpload, importManualLeads);
 router.get('/manual-leads', getManualLeadsController);
+router.get('/manual-leads/transfer-targets', getTransferTargets);
+router.post('/manual-leads/transfer', requireRole('admin', 'team_lead', 'caller'), transferLeads);
+router.get('/manual-leads/:id/history', requireRole('super_admin'), getLeadHistory);
 router.post('/manual-leads', createManualLeadController);
 router.put('/manual-leads/:id', updateManualLeadController);
 router.patch('/manual-leads/:id/status-followup', updateLeadStatusFollowup);

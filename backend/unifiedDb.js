@@ -450,9 +450,23 @@ async function getAllActiveLeads() {
 
 // scope: null = every lead (admin); otherwise an array of employee IDs whose leads may be seen.
 async function getManualLeads(scope = null) {
+  // leads this user's team sent to another team stay visible (read only)
+  let sentIds = [];
+  if (scope) {
+    try {
+      const sent = await prisma.lead_transfers.findMany({
+        where: { from_user_id: { in: scope } },
+        select: { lead_id: true },
+        distinct: ['lead_id'],
+      });
+      sentIds = sent.map((s) => s.lead_id);
+    } catch (err) {
+      console.error('Failed to load sent leads:', err.message);
+    }
+  }
   const rows = await prisma.leads.findMany({
     where: scope
-      ? { user_id: { in: scope } }
+      ? { OR: [{ user_id: { in: scope } }, ...(sentIds.length ? [{ id: { in: sentIds } }] : [])] }
       : {
         OR: [
           { source: 'Manual Entry' },
@@ -488,10 +502,52 @@ async function getManualLeads(scope = null) {
       followup_time: true,
       followup_priority: true,
       interested_at: true,
-      owner: { select: { employee_name: true } },
+      transferred_at: true,
+      transferred_from_user_id: true,
+      transferred_from_team_id: true,
+      owner: { select: { employee_name: true, team_id: true } },
       called_by: { select: { employee_name: true } }
     }
   });
+
+  // Transfer details: who sent it, from/to which team, and whether this viewer may only look at it
+  const teamIds = new Set();
+  const fromUserIds = new Set();
+  for (const r of rows) {
+    if (r.transferred_at) {
+      if (r.transferred_from_team_id) teamIds.add(r.transferred_from_team_id);
+      if (r.owner?.team_id) teamIds.add(r.owner.team_id);
+      if (r.transferred_from_user_id) fromUserIds.add(r.transferred_from_user_id);
+    }
+  }
+  // everyone who ever sent each transferred lead (a lead can be passed on more than once)
+  const sendersByLead = new Map();
+  const routeByLead = new Map(); // ordered holders: first sender -> ... -> current holder
+  const transferredLeadIds = rows.filter((r) => r.transferred_at).map((r) => r.id);
+  if (transferredLeadIds.length) {
+    const history = await prisma.lead_transfers
+      .findMany({
+        where: { lead_id: { in: transferredLeadIds } },
+        orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+        select: { lead_id: true, from_user_id: true, to_user_id: true },
+      })
+      .catch(() => []);
+    for (const h of history) {
+      if (!routeByLead.has(h.lead_id)) routeByLead.set(h.lead_id, h.from_user_id ? [h.from_user_id] : []);
+      if (h.to_user_id) routeByLead.get(h.lead_id).push(h.to_user_id);
+      if (h.to_user_id) fromUserIds.add(h.to_user_id);
+      if (!h.from_user_id) continue;
+      if (!sendersByLead.has(h.lead_id)) sendersByLead.set(h.lead_id, new Set());
+      sendersByLead.get(h.lead_id).add(h.from_user_id);
+      fromUserIds.add(h.from_user_id);
+    }
+  }
+  const [teamRows, fromUsers] = await Promise.all([
+    teamIds.size ? prisma.teams.findMany({ where: { id: { in: [...teamIds] } }, select: { id: true, name: true } }) : [],
+    fromUserIds.size ? prisma.users.findMany({ where: { id: { in: [...fromUserIds] } }, select: { id: true, employee_name: true } }) : [],
+  ]);
+  const teamName = new Map(teamRows.map((t) => [t.id, t.name]));
+  const userName = new Map(fromUsers.map((u) => [u.id, u.employee_name]));
 
   // Follow-up emails actually sent per lead (from email_history)
   const ids = rows.map((r) => r.id);
@@ -503,7 +559,22 @@ async function getManualLeads(scope = null) {
       })
     : [];
   const byLead = new Map(counts.map((c) => [c.lead_id, c._count._all]));
-  return rows.map((r) => ({ ...r, followup_emails_sent: byLead.get(r.id) || 0 }));
+  return rows.map((r) => ({
+    ...r,
+    followup_emails_sent: byLead.get(r.id) || 0,
+    read_only: scope ? !scope.includes(r.user_id) : false,
+    transfer: r.transferred_at
+      ? {
+          at: r.transferred_at,
+          from_user: userName.get(r.transferred_from_user_id) || '',
+          from_team: teamName.get(r.transferred_from_team_id) || '',
+          to_user: r.owner?.employee_name || '',
+          to_team: teamName.get(r.owner?.team_id) || '',
+          senders: [...(sendersByLead.get(r.id) || [])].map((id) => userName.get(id)).filter(Boolean),
+          route: (routeByLead.get(r.id) || []).map((id) => userName.get(id)).filter(Boolean),
+        }
+      : null,
+  }));
 }
 
 async function getActiveUserById(id) {

@@ -236,7 +236,15 @@ async function authorizeLead(req, res, id) {
   if (!lead) { res.status(404).json({ error: 'Lead not found.' }); return null; }
   const scope = await getScopeUserIds(req.user);
   if (!inScope(scope, lead.user_id)) {
-    res.status(403).json({ error: 'This lead belongs to another employee.' });
+    // a lead this team sent away stays visible but read-only
+    const sent = scope
+      ? await prisma.lead_transfers.findFirst({ where: { lead_id: id, from_user_id: { in: scope } }, select: { id: true } }).catch(() => null)
+      : null;
+    res.status(403).json({
+      error: sent
+        ? 'This lead was sent to another team. Only the receiving team can edit it.'
+        : 'This lead belongs to another employee.',
+    });
     return null;
   }
   return lead;

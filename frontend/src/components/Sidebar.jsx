@@ -57,6 +57,7 @@ const Sidebar = ({ collapsed = false, onToggle }) => {
     { path: '/app/company', label: 'Company', icon: <Building2 size={20} /> },
     { path: '/app/insights', label: 'Insights', icon: <BarChart3 size={20} /> },
     { path: '/app/users', label: 'Users', icon: <Users size={20} /> },
+    { path: '/app/requests', label: 'Requests', icon: <Mail size={20} /> },
     { path: '/app/RocketReach', label: 'Lead Finder', icon: <Search size={20} /> },
     { path: '/app/access', label: 'Access Control', icon: <ShieldCheck size={20} />, superOnly: true },
   ].filter((item) => !item.superOnly || currentUser?.role === 'super_admin');

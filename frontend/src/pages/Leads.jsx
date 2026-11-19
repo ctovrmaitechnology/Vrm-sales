@@ -19,6 +19,7 @@ import {
   ChevronRight,
   ChevronDown,
   CheckSquare,
+  ArrowRightLeft,
 } from 'lucide-react';
 import Button from '../components/Button';
 import ExcelImportControls from '../components/ExcelImportControls';
@@ -55,7 +56,13 @@ const LEAD_FILTERS = [
   { key: 'status', label: 'Status', field: 'status' },
   { key: 'email_status', label: 'Email status', field: 'email_status' },
   { key: 'source', label: 'Source', field: 'source' },
-  { key: 'owner', label: 'Assigned user', field: 'owner.employee_name' },
+  {
+    key: 'owner',
+    label: 'Assigned user',
+    field: 'owner.employee_name',
+    // the sender still finds a lead they sent to another team under their own name
+    getValues: (item) => [item.owner?.employee_name, ...(item.transfer?.senders || [])],
+  },
 ];
 
 const LEAD_AVATAR_PALETTES = [
@@ -192,6 +199,34 @@ const Leads = () => {
       return data.data;
     },
   });
+  // super admin: lead history popup
+  const [historyLead, setHistoryLead] = useState(null);
+  const historyQuery = useQuery({
+    queryKey: ['lead-history', historyLead?.id],
+    enabled: superAdmin && !!historyLead,
+    queryFn: async () => {
+      const response = await fetch(apiUrl(`/api/manual-leads/${historyLead.id}/history`));
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to load lead history.');
+      return data.data;
+    },
+  });
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendTo, setSendTo] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
+  // users in other teams that leads can be sent to
+  const targetsQuery = useQuery({
+    queryKey: ['transfer-targets'],
+    enabled: sendOpen,
+    queryFn: async () => {
+      const response = await fetch(apiUrl('/api/manual-leads/transfer-targets'));
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to load users.');
+      return Array.isArray(data?.data) ? data.data : [];
+    },
+  });
+  const transferTargets = targetsQuery.data || EMPTY_LIST;
   const manualLeads = manualLeadsQuery.data || EMPTY_LIST;
   const users = usersQuery.data || EMPTY_LIST;
   const loading = manualLeadsQuery.isLoading;
@@ -333,6 +368,7 @@ const Leads = () => {
     facets: LEAD_FILTERS,
     dateField: 'created_at',
   });
+  const ownerFilterValue = leadTableFilters.facets.find((f) => f.key === 'owner')?.value || '';
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [sortField, setSortField] = useState('created_at');
@@ -528,16 +564,18 @@ const Leads = () => {
 
   const leadPagination = useTablePagination(filteredLeads);
 
-  const allOnPageSelected = leadPagination.pageItems.length > 0 &&
-    leadPagination.pageItems.every((item) => selectedIds.has(item.id));
+  // leads this team already sent to another team are view-only, so they can't be selected
+  const selectableOnPage = leadPagination.pageItems.filter((item) => !item.read_only);
+  const allOnPageSelected = selectableOnPage.length > 0 &&
+    selectableOnPage.every((item) => selectedIds.has(item.id));
 
   const toggleSelectAll = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (allOnPageSelected) {
-        leadPagination.pageItems.forEach((item) => next.delete(item.id));
+        selectableOnPage.forEach((item) => next.delete(item.id));
       } else {
-        leadPagination.pageItems.forEach((item) => next.add(item.id));
+        selectableOnPage.forEach((item) => next.add(item.id));
       }
       return next;
     });
@@ -553,6 +591,12 @@ const Leads = () => {
   };
 
   const totalResults = filteredLeads.length;
+  // counts follow ownership: a lead sent to another team leaves this person's count
+  const isSentAway = (lead) =>
+    lead.read_only ||
+    Boolean(ownerFilterValue && lead.owner?.employee_name !== ownerFilterValue && (lead.transfer?.senders || []).includes(ownerFilterValue));
+  const sentLeadCount = filteredLeads.filter(isSentAway).length;
+  const ownedLeadCount = totalResults - sentLeadCount;
   const handleBulkDelete = async () => {
     const ids = [...selectedIds];
     if (!ids.length) return;
@@ -581,6 +625,38 @@ const Leads = () => {
       setError(bulkError.message);
     } finally {
       setBulkDeleting(false);
+    }
+  };
+  const openSendModal = () => { setSendTo(''); setSendError(''); setSendOpen(true); };
+  const handleSendLeads = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    if (!sendTo) { setSendError('Select the user who will receive these leads.'); return; }
+    setSending(true);
+    setSendError('');
+    try {
+      const response = await fetch(apiUrl('/api/manual-leads/transfer'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, to_user_id: Number(sendTo) }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Failed to send the leads.');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['manual-leads'] }),
+        queryClient.invalidateQueries({ queryKey: ['followups'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-stats'] }),
+      ]);
+      setSelectedIds(new Set());
+      setSendOpen(false);
+      setNotice(
+        `${data.transferred} lead${data.transferred === 1 ? '' : 's'} sent to ${data.to_user} (${data.to_team}).` +
+        (data.skipped ? ` ${data.skipped} skipped (not yours to send, or already in that team).` : '')
+      );
+    } catch (sendErr) {
+      setSendError(sendErr.message);
+    } finally {
+      setSending(false);
     }
   };
   const startIndex = totalResults === 0 ? 0 : (leadPagination.page - 1) * leadPagination.pageSize + 1;
@@ -640,9 +716,14 @@ const Leads = () => {
           <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
             Manually Added Leads
           </h2>
-          <span className="wa-pill-badge" style={{ padding: '0.2rem 0.65rem' }}>
-            {filteredLeads.length}
+          <span className="wa-pill-badge" style={{ padding: '0.2rem 0.65rem' }} title="Leads you own">
+            {ownedLeadCount}
           </span>
+          {sentLeadCount > 0 && (
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#b45309' }}>
+              · {sentLeadCount} sent (view only)
+            </span>
+          )}
         </div>
 
         <div className="wa-toolbar-actions">
@@ -839,7 +920,7 @@ const Leads = () => {
       </div>
 
       {/* Selection Banner */}
-      {superAdmin && selectedIds.size > 0 && (
+      {selectedIds.size > 0 && (
         <div className="wa-selection-banner" style={{ marginBottom: '1rem' }}>
           <div className="wa-selection-info">
             <CheckSquare size={16} />
@@ -856,6 +937,19 @@ const Leads = () => {
             </button>
             <button
               type="button"
+              onClick={openSendModal}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                padding: '0.45rem 1rem', borderRadius: '8px',
+                border: '1px solid #2563eb', background: '#2563eb', color: '#ffffff',
+                fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              <ArrowRightLeft size={14} /> Send to team
+            </button>
+            {superAdmin && (
+            <button
+              type="button"
               onClick={handleBulkDelete}
               disabled={bulkDeleting}
               style={{
@@ -869,6 +963,7 @@ const Leads = () => {
             >
               <Trash2 size={14} /> {bulkDeleting ? 'Deleting...' : 'Delete'}
             </button>
+            )}
           </div>
         </div>
       )}
@@ -879,7 +974,7 @@ const Leads = () => {
             <thead>
               <tr>
                 <th style={{ width: '36px', textAlign: 'center', paddingLeft: '0.65rem' }}>
-                  {superAdmin && (
+                  {selectableOnPage.length > 0 && (
                   <input
                     type="checkbox"
                     aria-label="Select all leads on this page"
@@ -920,6 +1015,11 @@ const Leads = () => {
                 <th style={{ width: '7%' }} className="leads-th-sortable" onClick={() => handleSort('created_at')}>
                   <span className="wa-th-content">ADDED <span className="wa-sort-arrows">{sortField === 'created_at' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
+                {superAdmin && (
+                  <th style={{ width: '6%', minWidth: '90px', textAlign: 'center' }}>
+                    <span className="wa-th-content" style={{ justifyContent: 'center' }}>HISTORY</span>
+                  </th>
+                )}
                 <th style={{ width: '8%', minWidth: '125px', textAlign: 'center', paddingRight: '0.75rem' }}>
                   <span className="wa-th-content" style={{ justifyContent: 'center' }}>ACTIONS</span>
                 </th>
@@ -928,13 +1028,13 @@ const Leads = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="13" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8', background: '#ffffff', borderRadius: '14px' }}>
+                  <td colSpan={superAdmin ? 14 : 13} style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8', background: '#ffffff', borderRadius: '14px' }}>
                     Loading leads...
                   </td>
                 </tr>
               ) : error || manualLeadsQuery.error || usersQuery.error ? (
                 <tr>
-                  <td colSpan="13" role="alert" style={{ textAlign: 'center', color: '#b91c1c', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
+                  <td colSpan={superAdmin ? 14 : 13} role="alert" style={{ textAlign: 'center', color: '#b91c1c', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
                     {error || manualLeadsQuery.error?.message || usersQuery.error?.message}
                   </td>
                 </tr>
@@ -952,7 +1052,7 @@ const Leads = () => {
                   return (
                     <tr key={item.id} className={isChecked ? 'wa-row-selected' : ''}>
                       <td style={{ textAlign: 'center' }}>
-                        {superAdmin && (
+                        {!item.read_only && (
                         <input
                           type="checkbox"
                           aria-label={`Select ${item.full_name || 'lead'}`}
@@ -969,6 +1069,22 @@ const Leads = () => {
                         <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.86rem' }}>
                           {item.full_name || '-'}
                         </span>
+                        {item.transfer && !item.read_only && !(ownerFilterValue && item.owner?.employee_name !== ownerFilterValue && (item.transfer.senders || []).includes(ownerFilterValue)) && (
+                          <span
+                            title={`Received from ${item.transfer.from_user || 'another team'}${item.transfer.from_team ? ` (${item.transfer.from_team})` : ''}${(item.transfer.route || []).length > 1 ? `\nRoute: ${item.transfer.route.join(' → ')}` : ''}`}
+                            style={{ marginLeft: 6, color: '#047857', fontSize: '0.75rem', fontWeight: 600 }}
+                          >
+                            (received from {item.transfer.from_user || item.transfer.from_team || 'another team'})
+                          </span>
+                        )}
+                        {item.transfer && (item.read_only || (ownerFilterValue && item.owner?.employee_name !== ownerFilterValue && (item.transfer.senders || []).includes(ownerFilterValue))) && (
+                          <span
+                            title={`Sent to ${item.transfer.to_user || 'another team'}${item.transfer.to_team ? ` (${item.transfer.to_team})` : ''}. View only: only the receiving team can edit it.${(item.transfer.route || []).length > 1 ? `\nRoute: ${item.transfer.route.join(' → ')}` : ''}`}
+                            style={{ marginLeft: 6, color: '#b45309', fontSize: '0.75rem', fontWeight: 600 }}
+                          >
+                            (sent to {item.transfer.to_user || item.transfer.to_team || 'another team'})
+                          </span>
+                        )}
                       </td>
 
                       {/* COMPANY */}
@@ -1032,6 +1148,7 @@ const Leads = () => {
                             <input
                               type="checkbox"
                               checked={rowCall.is_called}
+                              disabled={item.read_only}
                               onChange={(e) => setRowCallField(item.id, 'is_called', e.target.checked)}
                               style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: '#16a34a' }}
                             />
@@ -1040,6 +1157,7 @@ const Leads = () => {
                           {/* User select */}
                           <select
                             value={rowCall.called_by_user_id}
+                            disabled={item.read_only}
                             onChange={(e) => setRowCallField(item.id, 'called_by_user_id', e.target.value)}
                             style={{ fontSize: '0.76rem', border: '1px solid #cbd5e1', borderRadius: '7px', padding: '2px 6px', background: '#f8fafc', color: '#334155', maxWidth: '130px', cursor: 'pointer' }}
                           >
@@ -1065,7 +1183,7 @@ const Leads = () => {
                       <td style={{ padding: '0.5rem 0.6rem' }}>
                         <select
                           value={item.lead_status || ''}
-                          disabled={statusSavingId === item.id}
+                          disabled={statusSavingId === item.id || item.read_only}
                           onChange={(e) => changeLeadStatus(item, e.target.value)}
                           style={{ fontSize: '0.76rem', fontWeight: 600, borderRadius: '7px', padding: '3px 6px', maxWidth: '130px', cursor: 'pointer', ...(LEAD_STATUS_STYLES[item.lead_status || ''] || LEAD_STATUS_STYLES['']) }}
                         >
@@ -1085,6 +1203,7 @@ const Leads = () => {
                             <button
                               type="button"
                               title={item.followup_note || ''}
+                              disabled={item.read_only}
                               onClick={() => openFollowup(item)}
                               style={{ fontSize: '0.76rem', fontWeight: 600, padding: '3px 10px', borderRadius: '7px', cursor: 'pointer', whiteSpace: 'nowrap', ...FOLLOWUP_TONES[tone] }}
                             >
@@ -1104,6 +1223,17 @@ const Leads = () => {
                         </div>
                       </td>
 
+                      {superAdmin && (
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => setHistoryLead(item)}
+                            style={{ border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', borderRadius: '8px', padding: '0.25rem 0.6rem', fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            History
+                          </button>
+                        </td>
+                      )}
                       {/* ACTIONS */}
                       <td style={{ textAlign: 'center', whiteSpace: 'nowrap', paddingRight: '0.75rem', overflow: 'visible' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center' }}>
@@ -1128,6 +1258,7 @@ const Leads = () => {
                           >
                             <Eye size={14} />
                           </button>
+                          {!item.read_only && (
                           <button
                             type="button"
                             title="Edit lead"
@@ -1149,7 +1280,8 @@ const Leads = () => {
                           >
                             <Pencil size={13} />
                           </button>
-                          {admin && (
+                          )}
+                          {admin && !item.read_only && (
                           <button
                             type="button"
                             title="Delete lead"
@@ -1179,7 +1311,7 @@ const Leads = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan="13" style={{ textAlign: 'center', color: '#64748b', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
+                  <td colSpan={superAdmin ? 14 : 13} style={{ textAlign: 'center', color: '#64748b', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
                     {searchTerm || leadTableFilters.hasFilters || calledFilter ? (
                       <div>
                         <p style={{ margin: 0, fontWeight: 500 }}>No leads match the selected filters.</p>
@@ -1544,6 +1676,69 @@ const Leads = () => {
         </div>
       )}
 
+      {/* Lead history popup (super admin) */}
+      {superAdmin && historyLead && (
+        <div
+          onClick={() => setHistoryLead(null)}
+          onKeyDown={(e) => { if (e.key === 'Escape') setHistoryLead(null); }}
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: '1rem' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: '560px', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.25)' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '1rem 1.25rem', borderBottom: '1px solid #e2e8f0' }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0f172a' }}>Lead history</div>
+                <div style={{ fontSize: '0.84rem', color: '#64748b' }}>
+                  {historyLead.full_name}{historyLead.phone_number ? ` · ${historyLead.phone_number}` : ''}
+                </div>
+              </div>
+              <button type="button" aria-label="Close" onClick={() => setHistoryLead(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}>
+                <X size={20} />
+              </button>
+            </div>
+            <div style={{ padding: '1rem 1.25rem', fontSize: '0.9rem', color: '#334155' }}>
+              {historyQuery.isLoading && <div>Loading history…</div>}
+              {historyQuery.isError && <div role="alert" style={{ color: '#b91c1c' }}>{historyQuery.error.message}</div>}
+              {historyQuery.data && (() => {
+                const h = historyQuery.data;
+                const who = (u, t) => `${u || 'Unknown'}${t ? ` (${t})` : ''}`;
+                return (
+                  <>
+                    <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '1rem' }}>
+                      <div><strong>Initially uploaded by:</strong> {who(h.uploaded_by.user, h.uploaded_by.team)}<span style={{ color: '#94a3b8' }}> · {formatDateTime(h.uploaded_by.at)}</span></div>
+                      <div><strong>Current holder:</strong> {who(h.current_holder.user, h.current_holder.team)}</div>
+                      {h.status && <div><strong>Status:</strong> {h.status}</div>}
+                    </div>
+                    <div style={{ fontWeight: 700, marginBottom: '0.4rem' }}>Timeline</div>
+                    <ol style={{ margin: 0, paddingLeft: '1.2rem', display: 'grid', gap: '0.55rem' }}>
+                      <li>Uploaded by {who(h.uploaded_by.user, h.uploaded_by.team)}<div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>{formatDateTime(h.uploaded_by.at)}</div></li>
+                      {h.moves.map((m, i) => (
+                        <li key={i}>
+                          {who(m.from_user, m.from_team)} → {who(m.to_user, m.to_team)}
+                          <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                            {formatDateTime(m.at)}{m.sent_by ? ` · sent by ${m.sent_by}` : ''}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                    {h.moves.length === 0 && <div style={{ marginTop: '0.6rem', color: '#64748b' }}>This lead has never been transferred.</div>}
+                    {h.route.length > 1 && (
+                      <div style={{ marginTop: '1rem', padding: '0.6rem 0.8rem', background: '#f1f5f9', borderRadius: '8px' }}>
+                        <strong>Route:</strong> {h.route.join(' → ')}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* View Full Details Modal */}
       {viewModalOpen && viewingLead && (
         <div style={{
@@ -1844,6 +2039,47 @@ const Leads = () => {
                 <button type="button" onClick={closeFollowup} style={{ padding: '0.45rem 0.9rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
                 <button type="button" disabled={followupSaving} onClick={saveFollowup} style={{ padding: '0.45rem 0.9rem', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>{followupSaving ? 'Saving…' : 'Save'}</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Send to team modal */}
+      {sendOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '1rem',
+        }}>
+          <div className="dashboard-section" style={{ maxWidth: 460, width: '100%', margin: 0 }}>
+            <h2 className="section-title">Send {selectedIds.size} lead{selectedIds.size === 1 ? '' : 's'} to another team</h2>
+            <p style={{ marginBottom: '1rem', color: '#475569', fontSize: '0.86rem' }}>
+              The receiving user's team will own and edit these leads. Your team will still see them, but only as view-only.
+            </p>
+            <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.82rem', fontWeight: 600, color: '#334155' }}>
+              Send to user
+            </label>
+            <select
+              value={sendTo}
+              onChange={(e) => setSendTo(e.target.value)}
+              disabled={sending || targetsQuery.isLoading}
+              style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '0.875rem', color: '#0f172a', backgroundColor: '#ffffff', marginBottom: '1rem' }}
+            >
+              <option value="">{targetsQuery.isLoading ? 'Loading users...' : 'Select a user...'}</option>
+              {transferTargets.map((u) => (
+                <option key={u.id} value={String(u.id)}>{u.employee_name} — {u.team_name}</option>
+              ))}
+            </select>
+            {(sendError || targetsQuery.error) && (
+              <p role="alert" style={{ color: '#b91c1c', marginBottom: '1rem', fontSize: '0.85rem' }}>
+                {sendError || targetsQuery.error?.message}
+              </p>
+            )}
+            <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
+              <Button type="button" variant="secondary" onClick={() => setSendOpen(false)} disabled={sending}>
+                Cancel
+              </Button>
+              <Button type="button" variant="primary" onClick={handleSendLeads} disabled={sending || !sendTo}>
+                {sending ? 'Sending...' : 'Send leads'}
+              </Button>
             </div>
           </div>
         </div>

@@ -341,6 +341,15 @@ async function getTeamReport(req, res) {
         prisma.leads.groupBy({ by: ['called_by_user_id', 'lead_status'], where: { ...statusWhere, lead_status_at: { gte: day.start, lte: day.end } }, _count: { _all: true } }),
       ])
       : [[], []];
+    const [sentAll, sentToday, recvAll, recvToday] = ids.length
+      ? await Promise.all([
+        prisma.lead_transfers.groupBy({ by: ['from_user_id'], where: { from_user_id: { in: ids } }, _count: { _all: true } }),
+        prisma.lead_transfers.groupBy({ by: ['from_user_id'], where: { from_user_id: { in: ids }, created_at: { gte: day.start, lte: day.end } }, _count: { _all: true } }),
+        prisma.lead_transfers.groupBy({ by: ['to_user_id'], where: { to_user_id: { in: ids } }, _count: { _all: true } }),
+        prisma.lead_transfers.groupBy({ by: ['to_user_id'], where: { to_user_id: { in: ids }, created_at: { gte: day.start, lte: day.end } }, _count: { _all: true } }),
+      ]).catch(() => [[], [], [], []])
+      : [[], [], [], []];
+    const transferCount = (list, key, id) => list.find((g) => g[key] === id)?._count._all || 0;
     const statusCount = (list, id, status) => list.find((g) => g.called_by_user_id === id && g.lead_status === status)?._count._all || 0;
     const leadsToday = new Map(leadGroups.map((g) => [g.user_id, g._count._all]));
     const callsToday = new Map(callGroups.map((g) => [g.called_by_user_id, g._count._all]));
@@ -359,6 +368,10 @@ async function getTeamReport(req, res) {
       not_interested_total: statusCount(statusAll, u.id, 'not_interested'),
       converted_today: statusCount(statusToday, u.id, 'converted'),
       converted_total: statusCount(statusAll, u.id, 'converted'),
+      leads_sent_today: transferCount(sentToday, 'from_user_id', u.id),
+      leads_sent_total: transferCount(sentAll, 'from_user_id', u.id),
+      leads_received_today: transferCount(recvToday, 'to_user_id', u.id),
+      leads_received_total: transferCount(recvAll, 'to_user_id', u.id),
     }));
 
     let ownTeam = null;
@@ -401,7 +414,7 @@ function finishSheet(sheet, statusCol, statusWidth) {
 }
 
 async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
-  const [users, teams, leads, calls] = await Promise.all([
+  const [users, teams, leads, calls, transfers] = await Promise.all([
     prisma.users.findMany({
       where: { is_active: true },
       orderBy: { employee_name: 'asc' },
@@ -416,15 +429,20 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
       where: { is_called: true, called_by_user_id: { not: null }, called_at: { lte: rangeEnd } },
          select: { called_by_user_id: true, called_at: true, lead_status: true, lead_status_at: true },
     }),
+    // leads sent to / received from other teams in the selected date range
+    prisma.lead_transfers.findMany({
+      where: { created_at: { gte: rangeStart, lte: rangeEnd } },
+      select: { from_user_id: true, to_user_id: true },
+    }).catch(() => []),
   ]);
 
   const teamName = new Map(teams.map((t) => [t.id, t.name]));
   const blank = () => ({
-    callsDay: 0, leadsDay: 0, callsAll: 0, leadsAll: 0,
+    callsDay: 0, leadsDay: 0, callsAll: 0, leadsAll: 0, exported: 0, imported: 0,
     intDay: 0, intAll: 0, notDay: 0, notAll: 0, convDay: 0, convAll: 0,
     fuDay: 0, fuAll: 0, notes: [],
   });
-  const keys = ['callsDay', 'leadsDay', 'callsAll', 'leadsAll', 'intDay', 'intAll', 'notDay', 'notAll', 'convDay', 'convAll', 'fuDay', 'fuAll'];
+  const keys = ['callsDay', 'leadsDay', 'callsAll', 'leadsAll', 'exported', 'imported', 'intDay', 'intAll', 'notDay', 'notAll', 'convDay', 'convAll', 'fuDay', 'fuAll'];
   const STATUS_KEYS = { interested: ['intDay', 'intAll'], not_interested: ['notDay', 'notAll'], converted: ['convDay', 'convAll'] };
   const fuIds = users.map((u) => u.id);
   const [fu, fuNotes] = await Promise.all([
@@ -450,6 +468,10 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     p.leadsAll++;
     if (inDay(l.created_at)) p.leadsDay++;
   }
+  for (const t of transfers) {
+    const from = people.get(t.from_user_id); if (from) from.exported++;
+    const to = people.get(t.to_user_id); if (to) to.imported++;
+  }
   for (const c of calls) {
     const p = people.get(c.called_by_user_id); if (!p) continue;
     p.callsAll++;
@@ -462,7 +484,7 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
   }
 
   const totalOf = (list) => keys.map((k) => list.reduce((n, x) => n + x[k], 0));
-  const COLS = 14;
+  const COLS = 16;
 
   const sheet = workbook.addWorksheet('Team Report');
   sheet.columns = [{ width: 18 }, ...Array.from({ length: COLS - 2 }, () => ({ width: 10 })), { width: 50 }];
@@ -486,7 +508,7 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     }
   };
 
-  const blockHeaders = ['Person', 'Calls (day)', 'Leads (day)', 'Calls (overall)', 'Leads (overall)', 'Interested (day)', 'Interested (overall)', 'Not Interested (day)', 'Not Interested (overall)', 'Converted (day)', 'Converted (overall)', 'Follow-ups Today', 'Overall Follow-ups', 'Follow-up Status'];
+  const blockHeaders = ['Person', 'Calls (day)', 'Leads (day)', 'Calls (overall)', 'Leads (overall)', 'Leads Sent', 'Leads Received', 'Interested (day)', 'Interested (overall)', 'Not Interested (day)', 'Not Interested (overall)', 'Converted (day)', 'Converted (overall)', 'Follow-ups Today', 'Overall Follow-ups', 'Follow-up Status'];
 
   const addBlock = (name, members) => {
     // Team name: one merged cell across all 8 columns
@@ -621,6 +643,124 @@ async function addFollowUpReportSheet(workbook, rangeStart, rangeEnd) {
   finishSheet(sheet, COLS, 60);
 }
 
+
+// "Team Transfers" sheet: leads sent between teams in the selected range.
+// Part 1 = team to team summary (exported by the sending team / imported by the receiving team),
+// Part 2 = every transferred lead.
+async function addTransfersSheet(workbook, rangeStart, rangeEnd) {
+  const [transfers, users, teams] = await Promise.all([
+    prisma.lead_transfers.findMany({
+      where: { created_at: { gte: rangeStart, lte: rangeEnd } },
+      orderBy: { created_at: 'asc' },
+    }).catch(() => []),
+    prisma.users.findMany({ select: { id: true, employee_name: true } }),
+    prisma.teams.findMany({ select: { id: true, name: true } }),
+  ]);
+  const leadIds = [...new Set(transfers.map((t) => t.lead_id))];
+  const leads = leadIds.length
+    ? await prisma.leads.findMany({
+        where: { id: { in: leadIds } },
+        select: { id: true, full_name: true, company_name: true, phone_number: true, whatsapp_number: true, lead_status: true },
+      })
+    : [];
+  const leadOf = new Map(leads.map((l) => [l.id, l]));
+  const userName = new Map(users.map((u) => [u.id, u.employee_name]));
+  const teamName = new Map(teams.map((t) => [t.id, t.name]));
+  // full route of each lead across ALL its moves (not only the ones in the date range)
+  const allMoves = leadIds.length
+    ? await prisma.lead_transfers.findMany({
+        where: { lead_id: { in: leadIds } },
+        orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+        select: { lead_id: true, from_user_id: true, to_user_id: true },
+      }).catch(() => [])
+    : [];
+  const routeIds = new Map();
+  for (const m of allMoves) {
+    if (!routeIds.has(m.lead_id)) routeIds.set(m.lead_id, m.from_user_id ? [m.from_user_id] : []);
+    if (m.to_user_id) routeIds.get(m.lead_id).push(m.to_user_id);
+  }
+  const tName = (id) => (id && teamName.get(id)) || UNASSIGNED;
+  const uName = (id) => (id && userName.get(id)) || '-';
+
+  const COLS = 11;
+  const sheet = workbook.addWorksheet('Team Transfers');
+  sheet.columns = [{ width: 20 }, { width: 24 }, { width: 24 }, { width: 18 }, { width: 22 }, { width: 22 }, { width: 22 }, { width: 22 }, { width: 22 }, { width: 18 }, { width: 44 }];
+  const fromStr = istDate(rangeStart.getTime());
+  const toStr = istDate(rangeEnd.getTime());
+  sheet.mergeCells(1, 1, 1, COLS);
+  sheet.getCell(1, 1).value = fromStr === toStr ? `Team Transfers: ${fromStr}` : `Team Transfers: ${fromStr} to ${toStr}`;
+  sheet.getCell(1, 1).font = { bold: true, size: 14 };
+  sheet.addRow([]);
+
+  const thin = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+  const border = { top: thin, left: thin, bottom: thin, right: thin };
+  const head = (values) => {
+    const r = sheet.addRow(values);
+    for (let c = 1; c <= values.length; c++) {
+      const cell = r.getCell(c);
+      cell.border = border;
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    }
+    r.height = 30;
+  };
+  const body = (values) => {
+    const r = sheet.addRow(values);
+    for (let c = 1; c <= values.length; c++) r.getCell(c).border = border;
+    return r;
+  };
+
+  // Part 1: team to team
+  const pairs = new Map();
+  for (const t of transfers) {
+    const key = `${t.from_team_id || 0}>${t.to_team_id || 0}`;
+    if (!pairs.has(key)) pairs.set(key, { from: tName(t.from_team_id), to: tName(t.to_team_id), n: 0 });
+    pairs.get(key).n++;
+  }
+  sheet.addRow(['Team to team summary']).font = { bold: true, size: 12 };
+  head(['Sending Team', 'Receiving Team', 'Leads Sent (by sending team)', 'Leads Received (by receiving team)']);
+  if (!pairs.size) {
+    const r = body(['No leads were transferred in this period.', '', '', '']);
+    r.getCell(1).font = { italic: true, color: { argb: 'FF94A3B8' } };
+  }
+  let total = 0;
+  for (const p of [...pairs.values()].sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to))) {
+    total += p.n;
+    body([p.from, p.to, p.n, p.n]);
+  }
+  if (pairs.size) {
+    const r = body(['TOTAL', '', total, total]);
+    for (let c = 1; c <= 4; c++) {
+      r.getCell(c).font = { bold: true };
+      r.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+    }
+  }
+  sheet.addRow([]);
+
+  // Part 2: lead details
+  sheet.addRow(['Transferred leads']).font = { bold: true, size: 12 };
+  head(['Date & Time (IST)', 'Lead', 'Company', 'Phone', 'Sent By (owner)', 'Sending Team', 'Received By', 'Receiving Team', 'Sent Via (clicked by)', 'Current Status', 'Full Route (all moves)']);
+  for (const t of transfers) {
+    const l = leadOf.get(t.lead_id) || {};
+    body([
+      new Date(t.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true }),
+      l.full_name || `Lead #${t.lead_id}`,
+      l.company_name || '-',
+      l.phone_number || l.whatsapp_number || '-',
+      uName(t.from_user_id),
+      tName(t.from_team_id),
+      uName(t.to_user_id),
+      tName(t.to_team_id),
+      uName(t.transferred_by_user_id),
+      l.lead_status || '-',
+      (routeIds.get(t.lead_id) || []).map((id) => uName(id)).join(' → ') || '-',
+    ]);
+  }
+  sheet.views = [{ zoomScale: 90 }];
+  sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+}
+
 async function exportdailyReport(req, res) {
   try {
     const day = getIstDay(req.query.date, 0);
@@ -646,6 +786,7 @@ async function exportdailyReport(req, res) {
     workbook.creator = 'VRM Sales Dashboard';
     await addTeamReportSheet(workbook, day.start, rangeEnd);
     await addFollowUpReportSheet(workbook, day.start, rangeEnd);
+    await addTransfersSheet(workbook, day.start, rangeEnd);
 
     const buffer = await workbook.xlsx.writeBuffer();
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -656,6 +797,7 @@ async function exportdailyReport(req, res) {
     return res.status(500).json({ success: false, error: 'Failed to build the daily report.' });
   }
 }
+
 async function renameUser(req, res) {
   const id = Number(req.params.id);
   const employeeName = typeof req.body?.employee_name === 'string' ? req.body.employee_name.trim() : '';
@@ -675,4 +817,5 @@ async function renameUser(req, res) {
     return res.status(500).json({ success: false, error: 'Failed to rename employee.' });
   }
 }
+
 module.exports = { getUsers, getTeamReport, createUser, getAccessUsers, setUserLogin, getUserHistory, exportdailyReport, deleteUser, renameUser };

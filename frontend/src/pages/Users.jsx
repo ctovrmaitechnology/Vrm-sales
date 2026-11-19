@@ -452,6 +452,8 @@ const [deletingId, setDeletingId] = useState(null);
                 <th style={{ textAlign: 'center' }}>Interested (today / overall)</th>
                 <th style={{ textAlign: 'center' }}>Not Interested (today / overall)</th>
                 <th style={{ textAlign: 'center' }}>Converted (today / overall)</th>
+                <th style={{ textAlign: 'center' }}>Leads Sent (today / overall)</th>
+                <th style={{ textAlign: 'center' }}>Leads Received (today / overall)</th>
                 <th style={{ textAlign: 'center' }}>Follow-ups (today)</th>
                 <th style={{ textAlign: 'center' }}>Total Follow-ups</th>
                 <th>Follow-up Status</th>
@@ -460,7 +462,7 @@ const [deletingId, setDeletingId] = useState(null);
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="14" style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>Loading team members...</td></tr>
+                <tr><td colSpan="16" style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>Loading team members...</td></tr>
               ) : usersFilters.filteredItems.length ? usersPagination.pageItems.map((user) => {
                 const initials = (user.employee_name || 'U')
                   .split(' ')
@@ -547,6 +549,16 @@ const [deletingId, setDeletingId] = useState(null);
                       </span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', minWidth: '48px', padding: '3px 10px', borderRadius: '12px', fontWeight: 700, fontSize: '0.8rem', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                        {user.leads_sent_today || 0} / {user.leads_sent_total || 0}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', minWidth: '48px', padding: '3px 10px', borderRadius: '12px', fontWeight: 700, fontSize: '0.8rem', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
+                        {user.leads_received_today || 0} / {user.leads_received_total || 0}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
                       <span style={{ display: 'inline-block', minWidth: '32px', padding: '3px 10px', borderRadius: '12px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', fontWeight: 700, fontSize: '0.8rem' }}>
                         {user.followups_today || 0}
                       </span>
@@ -595,7 +607,7 @@ const [deletingId, setDeletingId] = useState(null);
                 );
               }) : (
                 <tr>
-                  <td colSpan="14" style={{ textAlign: 'center', color: '#64748b', padding: '2.5rem' }}>
+                  <td colSpan="16" style={{ textAlign: 'center', color: '#64748b', padding: '2.5rem' }}>
                     {usersFilters.hasFilters ? 'No employees match the selected filters.' : 'No employees added yet.'}
                   </td>
                 </tr>
