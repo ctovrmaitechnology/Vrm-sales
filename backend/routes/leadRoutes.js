@@ -40,7 +40,7 @@ router.put('/manual-leads/:id', updateManualLeadController);
 router.patch('/manual-leads/:id/status-followup', updateLeadStatusFollowup);
 router.get('/lead-followups', getLeadFollowups);
 router.patch('/manual-leads/:id/call-status', updateLeadCallStatus);
-router.delete('/manual-leads/:id', adminOnly, deleteManualLeadController);
+router.delete('/manual-leads/:id', requireRole('super_admin'), deleteManualLeadController);
 router.post('/manual-leads/bulk-delete', requireRole('super_admin'), bulkDeleteManualLeads);
 router.get('/ingestion/whatsapp', getWhatsAppLeads);
 router.get('/ingestion/email', getEmailLeads);
