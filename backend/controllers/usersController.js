@@ -12,7 +12,31 @@ const USER_SELECT = {
 };
 const ASSIGNABLE_ROLES = ['admin', 'team_lead', 'caller']; // super_admin is only created with the createAdmin script
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
+// Lead credit: a lead counts for the user who first held it. Sending it to another team
+// does not reduce the sender's lead count and does not raise the receiver's.
+// Returns Map(user_id -> count), or null if it cannot be worked out (then the plain owner count is kept).
+async function creditedLeadCounts(ids, from, to) {
+  if (!ids.length) return null;
+  try {
+    const range = from && to ? ' AND x.created_at >= $2::timestamptz AND x.created_at <= $3::timestamptz' : '';
+    const params = from && to ? [ids, from, to] : [ids];
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT x.origin AS user_id, COUNT(*)::int AS n FROM (
+         SELECT l.id, l.created_at,
+           COALESCE((SELECT t.from_user_id FROM lead_transfers t
+                     WHERE t.lead_id = l.id AND t.from_user_id IS NOT NULL
+                     ORDER BY t.created_at ASC, t.id ASC LIMIT 1), l.user_id) AS origin
+         FROM leads l) x
+       WHERE x.origin = ANY($1::int[])${range}
+       GROUP BY x.origin`,
+      ...params,
+    );
+    return new Map(rows.map((r) => [Number(r.user_id), Number(r.n)]));
+  } catch (error) {
+    console.error('creditedLeadCounts failed, using owner counts:', error.message);
+    return null;
+  }
+}
 // none = no email yet, no_password = email registered, pending = password set but not approved, approved = can sign in
 function loginStatus(user) {
   if (!user.email) return 'none';
@@ -354,10 +378,13 @@ async function getTeamReport(req, res) {
     const leadsToday = new Map(leadGroups.map((g) => [g.user_id, g._count._all]));
     const callsToday = new Map(callGroups.map((g) => [g.called_by_user_id, g._count._all]));
 
+    const creditAll = await creditedLeadCounts(ids);
+    const creditToday = await creditedLeadCounts(ids, day.start, day.end);
     const rows = users.map((u) => ({
       ...toPublicUser(u, isAdmin),
+      _count: creditAll ? { ...u._count, leads: creditAll.get(u.id) || 0 } : u._count,
       team_name: u.team?.name || null,
-      leads_today: leadsToday.get(u.id) || 0,
+      leads_today: (creditToday ? creditToday.get(u.id) : leadsToday.get(u.id)) || 0,
       calls_today: callsToday.get(u.id) || 0,
       followups_today: fu.today.get(u.id) || 0,
       followups_total: fu.total.get(u.id) || 0,
@@ -423,7 +450,7 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     prisma.teams.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
     prisma.leads.findMany({
       where: { user_id: { not: null }, created_at: { lte: rangeEnd } },
-      select: { user_id: true, created_at: true, lead_status: true },
+      select: { id: true, user_id: true, created_at: true, lead_status: true },
     }),
     prisma.leads.findMany({
       where: { is_called: true, called_by_user_id: { not: null }, called_at: { lte: rangeEnd } },
@@ -463,8 +490,16 @@ async function addTeamReportSheet(workbook, rangeStart, rangeEnd) {
     p.fuAll = fu.total.get(u.id) || 0;
     p.notes = fuNotes.get(u.id) || [];
   }
+  // a lead counts for the user who first held it (sending it on does not change that)
+  const firstHolder = new Map();
+  const firstMoves = await prisma.lead_transfers.findMany({
+    where: { from_user_id: { not: null } },
+    orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+    select: { lead_id: true, from_user_id: true },
+  }).catch(() => []);
+  for (const m of firstMoves) if (!firstHolder.has(m.lead_id)) firstHolder.set(m.lead_id, m.from_user_id);
   for (const l of leads) {
-    const p = people.get(l.user_id); if (!p) continue;
+    const p = people.get(firstHolder.get(l.id) ?? l.user_id); if (!p) continue;
     p.leadsAll++;
     if (inDay(l.created_at)) p.leadsDay++;
   }
