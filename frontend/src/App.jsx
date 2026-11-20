@@ -13,7 +13,7 @@ import Company from './pages/Company';
 import Users from './pages/Users';
 import Calls from './pages/Calls';
 import Insights from './pages/Insights';
-import Requests from './pages/Requests';
+
 
 import Dashboard from './old-email-components/Dashboard';
 import UploadLeads from './old-email-components/UploadLeads';
@@ -69,7 +69,7 @@ function App() {
               <Route path="insights" element={<Insights />} />
               <Route path="insight" element={<Navigate to="/app/insights" replace />} />
               <Route path="users" element={<Users />} />
-              <Route path="requests" element={<Requests />} />
+
               <Route path="access" element={<SuperAdminRoute><AccessControl /></SuperAdminRoute>} />
               <Route path="RocketReach" element={<RocketReach />} />
 

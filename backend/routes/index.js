@@ -14,7 +14,7 @@ const insightsRoutes = require('./insightsRoutes');
 const callRoutes = require('./callRoutes');
 const RocketReachroutes = require('./RocketReachroutes');
 const teamRoutes = require('./teamRoutes');
-const requestRoutes = require('./requestRoutes');
+
 const authRoutes = require('./authRoutes');
 const { authGate } = require('../middleware/auth');
 
@@ -34,6 +34,6 @@ router.use('/insights', insightsRoutes);
 router.use('/calls', callRoutes);
 router.use('/rocketreach', RocketReachroutes);
 router.use('/teams', teamRoutes);
-router.use('/requests', requestRoutes);
+
 router.use('/auth', authRoutes);
 module.exports = router;
