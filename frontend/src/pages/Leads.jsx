@@ -857,7 +857,7 @@ const Leads = () => {
             >
               <option value="">Call Status</option>
               <option value="called">Called</option>
-              <option value="not_called">Not Called</option>
+              <option value="not_called">Yet to call</option>
             </select>
           </div>
 
@@ -1286,7 +1286,7 @@ const Leads = () => {
                             <Pencil size={13} />
                           </button>
                           )}
-                          {admin && !item.read_only && (
+                          {superAdmin && !item.read_only && (
                           <button
                             type="button"
                             title="Delete lead"
