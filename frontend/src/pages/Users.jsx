@@ -438,10 +438,11 @@ const [deletingId, setDeletingId] = useState(null);
 
         <TableFilters {...usersFilters} searchPlaceholder="Search employees..." />
 
-        <div className="table-container" style={{ marginTop: '0.75rem' }}>
-          <table>
+        <div className="table-container users-table-box" style={{ marginTop: '0.75rem' }}>
+          <table className="users-table">
             <thead>
               <tr>
+                <th>S.NO</th>
                 <th>Member</th>
                 <th style={{ textAlign: 'center' }}>Leads Assigned</th>
                 <th style={{ textAlign: 'center' }}>Companies</th>
@@ -462,8 +463,8 @@ const [deletingId, setDeletingId] = useState(null);
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="16" style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>Loading team members...</td></tr>
-              ) : usersFilters.filteredItems.length ? usersPagination.pageItems.map((user) => {
+                <tr><td colspan="17" style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>Loading team members...</td></tr>
+              ) : usersFilters.filteredItems.length ? usersPagination.pageItems.map((user, idx) => {
                 const initials = (user.employee_name || 'U')
                   .split(' ')
                   .map((w) => w[0])
@@ -473,6 +474,9 @@ const [deletingId, setDeletingId] = useState(null);
                 const isSelected = String(user.id) === selectedUserId;
                 return (
                   <tr key={user.id} style={{ backgroundColor: isSelected ? 'rgba(239, 246, 255, 0.5)' : undefined }}>
+                    <td style={{ textAlign: 'center', fontWeight: 600, color: '#64748b' }}>
+                      {(usersPagination.page - 1) * usersPagination.pageSize + idx + 1}
+                    </td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         <div
@@ -607,7 +611,7 @@ const [deletingId, setDeletingId] = useState(null);
                 );
               }) : (
                 <tr>
-                  <td colSpan="16" style={{ textAlign: 'center', color: '#64748b', padding: '2.5rem' }}>
+                  <td colspan="17" style={{ textAlign: 'center', color: '#64748b', padding: '2.5rem' }}>
                     {usersFilters.hasFilters ? 'No employees match the selected filters.' : 'No employees added yet.'}
                   </td>
                 </tr>

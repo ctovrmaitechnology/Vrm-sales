@@ -70,12 +70,14 @@ const Insights = () => {
   const insightsQuery = useQuery({
     queryKey: ['whatsapp-insights'],
     queryFn: async () => {
-      const response = await fetch(apiUrl('/api/insights/whatsapp'));
+      const response = await fetch(apiUrl('/api/insights/whatsapp') + (window.__insightsFresh ? '?fresh=1' : ''));
+      window.__insightsFresh = false;
       const data = await response.json().catch(() => null);
       if (!response.ok) throw new Error(data?.error || 'Failed to load WhatsApp insights.');
       return data;
     },
     refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000,
   });
 
   const data = insightsQuery.data;
@@ -101,8 +103,7 @@ const Insights = () => {
         </div>
         <button
           type="button"
-          onClick={() => insightsQuery.refetch()}
-          disabled={insightsQuery.isFetching}
+          onClick={() => { window.__insightsFresh = true; insightsQuery.refetch(); }}
           className="btn btn-secondary"
           style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
         >

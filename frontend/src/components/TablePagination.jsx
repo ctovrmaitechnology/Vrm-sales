@@ -18,7 +18,11 @@ export default function TablePagination({
       padding: '0.75rem 1rem',
       borderTop: '1px solid #e2e8f0',
       color: '#475569',
-      fontSize: '0.875rem'
+      fontSize: '0.875rem',
+      position: 'sticky',
+      bottom: 0,
+      background: '#ffffff',
+      zIndex: 6
     }}>
       <button
         type="button"

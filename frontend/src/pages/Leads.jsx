@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Eye,
@@ -273,6 +273,7 @@ const Leads = () => {
   };
 
   const closeModal = () => {
+    setError('');
     setModalOpen(false);
     setEditingId(null);
     setLead(EMPTY_LEAD);
@@ -283,8 +284,8 @@ const Leads = () => {
     setSaving(true);
     setError('');
     setNotice('');
-
-    if (!lead.user_id) {
+    event.currentTarget?.querySelector?.('[role="alert"]')?.scrollIntoView?.({ block: 'nearest' });
+        if (!lead.user_id) {
       setError('Please select an assigned user.');
       setSaving(false);
       return;
@@ -295,10 +296,28 @@ const Leads = () => {
       return;
     }
 
+    const phoneRe = /^\+?\d{7,15}$/;
+    const cleanP = (v) => String(v || '').trim().replace(/[\s\-.()]/g, '');
+    if (lead.phone_number && !phoneRe.test(cleanP(lead.phone_number))) {
+      setError('Phone number is invalid. Use 7 to 15 digits, with an optional leading +.');
+      setSaving(false);
+      return;
+    }
+    if (lead.whatsapp_number && !phoneRe.test(cleanP(lead.whatsapp_number))) {
+      setError('WhatsApp number is invalid. Use 7 to 15 digits, with an optional leading +.');
+      setSaving(false);
+      return;
+    }
+    if (editingId === null &&
+        !String(lead.email || '').trim() && !String(lead.phone_number || '').trim() && !String(lead.whatsapp_number || '').trim()) {
+      setError('Enter an email or a phone number.');
+      setSaving(false);
+      return;
+    }
+
     const isEdit = editingId !== null;
     const url = isEdit ? apiUrl(`/api/manual-leads/${editingId}`) : apiUrl('/api/manual-leads');
     const method = isEdit ? 'PUT' : 'POST';
-
     try {
       const response = await fetch(url, {
         method,
@@ -377,7 +396,8 @@ const Leads = () => {
   // Called / Not Called filter state
   const [calledFilter, setCalledFilter] = useState(''); // '' | 'called' | 'not_called'
   const [calledByUserFilter, setCalledByUserFilter] = useState(''); // userId string
-
+    const [stageFilter, setStageFilter] = useState(''); // '' | interested | not_interested | followup | converted
+  const [phoneFilter, setPhoneFilter] = useState('');
   // Inline call-status row state: { [leadId]: { is_called, called_by_user_id, saving } }
   const [rowCallState, setRowCallState] = useState({});
 
@@ -502,6 +522,11 @@ const Leads = () => {
       setSortOrder('asc');
     }
   };
+  useEffect(() => {
+    if (error && modalOpen) {
+      document.querySelector('p[role="alert"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [error, modalOpen]);
 
   const filteredLeads = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -516,7 +541,20 @@ const Leads = () => {
     } else if (calledFilter === 'not_called') {
       list = list.filter((item) => !item.is_called);
     }
+    // Interested / Not Interested / Follow up / Converted filter
+    if (stageFilter) {
+      list = list.filter((item) => (
+        stageFilter === 'followup'
+          ? Boolean(item.followup_date)
+          : item.lead_status === stageFilter
+      ));
+    }
 
+    if (phoneFilter) {
+      const hasPhone = (item) =>
+        Boolean(String(item.phone_number || '').trim() || String(item.whatsapp_number || '').trim());
+      list = list.filter((item) => (phoneFilter === 'with_phone' ? hasPhone(item) : !hasPhone(item)));
+    }
     if (q) {
       list = list.filter((item) => (
         (item.full_name && item.full_name.toLowerCase().includes(q)) ||
@@ -565,7 +603,7 @@ const Leads = () => {
     }
 
     return list;
-  }, [leadTableFilters.filteredItems, searchTerm, sortField, sortOrder, calledFilter, calledByUserFilter]);
+  }, [leadTableFilters.filteredItems, searchTerm, sortField, sortOrder, calledFilter, calledByUserFilter, phoneFilter, stageFilter]);
 
   const leadPagination = useTablePagination(filteredLeads);
 
@@ -860,7 +898,35 @@ const Leads = () => {
               <option value="not_called">Yet to call</option>
             </select>
           </div>
+          <div className={`leads-filter-pill ${phoneFilter ? 'active' : ''}`}>
+            <Phone size={15} color="#2563eb" />
+            <select
+              value={phoneFilter}
+              onChange={(e) => { setPhoneFilter(e.target.value); leadPagination.setPage(1); }}
+              className="leads-filter-select"
+            >
+              <option value="">Leads With Phone</option>
+              <option value="with_phone">With Phone</option>
+              <option value="without_phone">Without Phone</option>
+            </select>
+          </div>
 
+          {/* Lead stage filter */}
+          <div className={`leads-filter-pill ${stageFilter ? 'active' : ''}`}>
+            <Layers size={15} color="#7e22ce" />
+            <select
+              value={stageFilter}
+              onChange={(e) => { setStageFilter(e.target.value); leadPagination.setPage(1); }}
+              className="leads-filter-select"
+            >
+              <option value="">Lead Stage</option>
+              <option value="interested">Interested</option>
+              <option value="not_interested">Not Interested</option>
+              <option value="followup">Follow up</option>
+              <option value="converted">Converted</option>
+            </select>
+          </div>
+          
           {/* Called By User filter — only shows when "Called" is selected */}
           {calledFilter === 'called' && (
             <div className={`leads-filter-pill ${calledByUserFilter ? 'active' : ''}`}>
@@ -914,6 +980,8 @@ const Leads = () => {
               setSearchTerm('');
               setCalledFilter('');
               setCalledByUserFilter('');
+              setPhoneFilter('');
+              setStageFilter('');
             }}
             className="leads-reset-btn"
             title="Reset filters"
@@ -975,23 +1043,47 @@ const Leads = () => {
       {/* 3. Floating Card Table matching WhatsApp Campaign UI */}
       <div className="wa-table-container-wrapper" style={{ minWidth: 0, marginTop: 0 }}>
         <div className="wa-cards-table-container">
-          <table className="wa-cards-table" style={{ minWidth: '1700px' }}>
+          <table className="wa-cards-table sticky-lead3" style={{ minWidth: '1700px' }}>
             <thead>
               <tr>
-                <th style={{ width: '36px', textAlign: 'center', paddingLeft: '0.65rem' }}>
-                  {selectableOnPage.length > 0 && (
-                  <input
-                    type="checkbox"
-                    aria-label="Select all leads on this page"
-                    checked={allOnPageSelected}
-                    onChange={toggleSelectAll}
-                  />
-                  )}
-                </th>
-                <th style={{ width: '48px', textAlign: 'center' }}>S.NO</th>
-                <th style={{ width: '11%' }} className="leads-th-sortable" onClick={() => handleSort('full_name')}>
-                  <span className="wa-th-content">NAME <span className="wa-sort-arrows">{sortField === 'full_name' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
-                </th>
+                <th style={{
+  width: '36px',
+  minWidth: '36px',
+  textAlign: 'center',
+  paddingLeft: '0.65rem'
+}}>
+  {selectableOnPage.length > 0 && (
+    <input
+      type="checkbox"
+      aria-label="Select all leads on this page"
+      checked={allOnPageSelected}
+      onChange={toggleSelectAll}
+    />
+  )}
+</th>
+
+<th style={{
+  width: '48px',
+  minWidth: '48px',
+  textAlign: 'center'
+}}>
+  S.NO
+</th>
+
+<th
+  style={{ width: '190px', minWidth: '190px' }}
+  className="leads-th-sortable"
+  onClick={() => handleSort('full_name')}
+>
+  <span className="wa-th-content">
+    NAME
+    <span className="wa-sort-arrows">
+      {sortField === 'full_name'
+        ? (sortOrder === 'asc' ? '↑' : '↓')
+        : '↑↓'}
+    </span>
+  </span>
+</th>
                 <th style={{ width: '9%' }} className="leads-th-sortable" onClick={() => handleSort('company_name')}>
                   <span className="wa-th-content">COMPANY <span className="wa-sort-arrows">{sortField === 'company_name' ? (sortOrder === 'asc' ? '↑' : '↓') : '↑↓'}</span></span>
                 </th>
@@ -1037,10 +1129,10 @@ const Leads = () => {
                     Loading leads...
                   </td>
                 </tr>
-              ) : error || manualLeadsQuery.error || usersQuery.error ? (
+              ) : manualLeadsQuery.error || usersQuery.error ? (
                 <tr>
                   <td colSpan={superAdmin ? 14 : 13} role="alert" style={{ textAlign: 'center', color: '#b91c1c', padding: '3.5rem 1rem', background: '#ffffff', borderRadius: '14px' }}>
-                    {error || manualLeadsQuery.error?.message || usersQuery.error?.message}
+                    {manualLeadsQuery.error?.message || usersQuery.error?.message}
                   </td>
                 </tr>
               ) : filteredLeads.length ? (
@@ -1286,8 +1378,7 @@ const Leads = () => {
                             <Pencil size={13} />
                           </button>
                           )}
-                          {superAdmin && !item.read_only && (
-                          <button
+                         {!item.read_only && ( <button
                             type="button"
                             title="Delete lead"
                             onClick={() => openDeleteModal(item)}
@@ -1624,7 +1715,10 @@ const Leads = () => {
                         type={field.type || 'text'}
                         value={lead[field.name]}
                         onChange={(event) => {
-                          const value = event.target.value;
+                          let value = event.target.value;
+                          if (field.name === 'phone_number' || field.name === 'whatsapp_number') {
+                            value = value.replace(/[^\d+\s\-().]/g, '');
+                          }
                           setLead((current) => {
                             const next = { ...current, [field.name]: value };
                             if (

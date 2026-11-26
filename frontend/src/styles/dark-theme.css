@@ -1,0 +1,628 @@
+/* =====================================================
+   dark-theme.css — ALL dark mode code lives here.
+   Import LAST in main.jsx (after global.css, table-layout.css).
+   ===================================================== */
+
+/* ---------- from global.css ---------- */
+/* ==========================================================================
+   DARK THEME STYLING
+   ========================================================================== */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --primary: #3b82f6;
+  --primary-light: rgba(37, 99, 235, 0.2);
+
+  --surface: #131b2e;
+  --surface-hover: #1a243a;
+  --surface-sunken: #0f172a;
+  --surface-selected: rgba(30, 58, 138, 0.35);
+  --accent-soft: rgba(37, 99, 235, 0.18);
+  --input-bg: #0f1729;
+
+  --border: #1e293b;
+  --border-soft: #1e293b;
+  --border-strong: #334155;
+
+  --text-strong: #f1f5f9;
+  --text: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-faint: #64748b;
+
+  --success-bg: rgba(34, 197, 94, 0.15);  --success-fg: #4ade80;
+  --danger-bg:  rgba(239, 68, 68, 0.15);  --danger-fg:  #f87171;
+  --warn-bg:    rgba(245, 158, 11, 0.15); --warn-fg:    #fbbf24;
+
+  --text-dark: #f1f5f9;
+  --bg-page: #0b0f19;
+  --bg-card: #131b2e;
+  --border-color: #1e293b;
+}
+
+/* Dark Theme Aurora Adjustments */
+[data-theme='dark'] .aurora-canvas-wrap {
+  background-color: #0b0f19;
+}
+
+[data-theme='dark'] .aurora-mesh-gradient {
+  background-image:
+    radial-gradient(ellipse 65% 55% at 5% 0%, #1e293b 0%, rgba(30, 41, 59, 0.4) 45%, transparent 70%),
+    radial-gradient(ellipse 70% 60% at 95% 5%, #172554 0%, rgba(23, 37, 84, 0.4) 40%, transparent 70%),
+    radial-gradient(ellipse 60% 50% at 50% 22%, #1e3a8a 0%, rgba(30, 58, 138, 0.3) 45%, transparent 80%),
+    radial-gradient(ellipse 60% 55% at 85% 85%, #172554 0%, rgba(23, 37, 84, 0.35) 45%, transparent 75%);
+  opacity: 0.85;
+}
+
+[data-theme='dark'] .aurora-orb-top-left {
+  background: radial-gradient(circle, rgba(30, 58, 138, 0.35) 0%, transparent 75%);
+}
+
+[data-theme='dark'] .aurora-orb-top-right {
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.25) 0%, transparent 80%);
+}
+
+[data-theme='dark'] .aurora-orb-center-white {
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 85%);
+}
+
+[data-theme='dark'] .aurora-orb-bottom-accent {
+  background: radial-gradient(circle, rgba(29, 78, 216, 0.2) 0%, transparent 80%);
+}
+
+[data-theme='dark'] .aurora-wave-shape-1 {
+  fill: url(#aurora-dark-grad-1) !important;
+  opacity: 0.4;
+}
+
+[data-theme='dark'] .aurora-wave-shape-2 {
+  fill: url(#aurora-dark-grad-2) !important;
+  opacity: 0.25;
+}
+
+[data-theme='dark'] .aurora-wave-shape-3,
+[data-theme='dark'] .aurora-wave-shape-4 {
+  opacity: 0.15;
+}
+
+[data-theme='dark'] .aurora-wave-edge-1,
+[data-theme='dark'] .aurora-wave-edge-2,
+[data-theme='dark'] .aurora-wave-edge-3 {
+  stroke: rgba(96, 165, 250, 0.25) !important;
+  filter: none;
+}
+
+[data-theme='dark'] .sidebar {
+  background: linear-gradient(180deg, #101726 0%, #131c2e 50%, #0d1322 100%);
+  border-right-color: #1e293b;
+  box-shadow: 2px 0 24px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme='dark'] .sidebar-upgrade-card {
+  background: #192338;
+  border-color: #26354f;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme='dark'] .sidebar-upgrade-card .sidebar-upgrade-btn {
+  background: #2563eb;
+}
+
+[data-theme='dark'] .navbar {
+  background: rgba(19, 27, 46, 0.82);
+  border-bottom-color: #1e293b;
+}
+
+[data-theme='dark'] .card,
+[data-theme='dark'] .dashboard-section,
+[data-theme='dark'] .table-container {
+  background-color: var(--bg-card);
+  border-color: #1e293b;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme='dark'] .nav-link {
+  color: #e2e8f0;   /* slightly white sidebar page names */
+}
+
+[data-theme='dark'] .nav-link:hover {
+  background-color: rgba(37, 99, 235, 0.2);
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .nav-link.active {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+/* Legacy WA Layout Adjustment for Dark Mode */
+
+[data-theme='dark'] .wa-card {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme='dark'] .wa-card:not(.wa-card-blue):not(.wa-card-green):not(.wa-card-purple) .wa-card-value-default {
+  color: var(--text-dark) !important;
+}
+
+[data-theme='dark'] .wa-card-label-default {
+  color: var(--text-muted) !important;
+}
+
+[data-theme='dark'] .wa-table-container {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme='dark'] .wa-table {
+  color: var(--text-dark) !important;
+}
+
+[data-theme='dark'] .wa-table thead {
+  background-color: var(--bg-page) !important;
+  border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme='dark'] .wa-table th {
+  color: var(--text-muted) !important;
+}
+
+[data-theme='dark'] .wa-table tr {
+  border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme='dark'] .wa-table-row-default {
+  background-color: var(--bg-card) !important;
+}
+
+[data-theme='dark'] .wa-table-row-default:hover {
+  background-color: var(--bg-page) !important;
+}
+
+[data-theme='dark'] .wa-text-primary {
+  color: var(--text-dark) !important;
+}
+
+[data-theme='dark'] .wa-text-secondary {
+  color: var(--text-muted) !important;
+}
+
+[data-theme='dark'] .wa-badge-gray {
+  background-color: var(--border-color) !important;
+  color: var(--text-dark) !important;
+}
+
+[data-theme='dark'] .wa-table-row-success {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+}
+
+[data-theme='dark'] .wa-table-row-success:hover {
+  background-color: rgba(16, 185, 129, 0.25) !important;
+}
+
+[data-theme='dark'] .wa-btn-danger {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+}
+
+[data-theme='dark'] .wa-btn-danger:hover {
+  background-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+[data-theme='dark'] .avatar {
+  background: linear-gradient(135deg, var(--primary), #818cf8) !important;
+}
+
+/* Ensure inputs are visible in dark mode */
+[data-theme='dark'] .form-control {
+  background-color: var(--bg-page) !important;
+  color: var(--text-dark) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme='dark'] .btn-secondary {
+  background-color: var(--bg-card) !important;
+  color: var(--text-dark) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme='dark'] .btn-secondary:hover {
+  background-color: var(--bg-page) !important;
+}
+
+[data-theme='dark'] .sidebar-toggle {
+  background: #1e293b;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+[data-theme='dark'] .sidebar-header .sidebar-toggle {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
+  border: none;
+}
+
+
+/* ---------- from whatsapp.css ---------- */
+[data-theme='dark'] .wa-card { box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35); }
+
+[data-theme='dark'] .wa-card-blue {
+  background: linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(23, 37, 84, 0.5) 100%) !important;
+  border-color: #1e3a8a !important;
+}
+
+[data-theme='dark'] .wa-card-green {
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.4) 0%, rgba(2, 44, 34, 0.5) 100%) !important;
+  border-color: #065f46 !important;
+}
+
+[data-theme='dark'] .wa-card-purple {
+  background: linear-gradient(135deg, rgba(88, 28, 135, 0.4) 0%, rgba(59, 7, 100, 0.5) 100%) !important;
+  border-color: #581c87 !important;
+}
+
+[data-theme='dark'] .wa-card-label-blue,   [data-theme='dark'] .wa-card-value-blue   { color: #93c5fd; }
+
+[data-theme='dark'] .wa-card-label-green,  [data-theme='dark'] .wa-card-value-green  { color: #86efac; }
+
+[data-theme='dark'] .wa-card-label-purple, [data-theme='dark'] .wa-card-value-purple { color: #d8b4fe; }
+
+[data-theme='dark'] .wa-badge-blue,
+[data-theme='dark'] .wa-type-badge-blue,
+[data-theme='dark'] .wa-btn-card-send,
+[data-theme='dark'] .wa-btn-view-action { background: rgba(37, 99, 235, 0.2); color: #93c5fd; border-color: rgba(59, 130, 246, 0.35); }
+
+[data-theme='dark'] .wa-badge-gray { background: var(--surface-hover); color: var(--text-muted); }
+
+[data-theme='dark'] .wa-badge-green,
+[data-theme='dark'] .wa-type-badge-green,
+[data-theme='dark'] .wa-btn-view-read,
+[data-theme='dark'] .wa-phone-wa-icon { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
+
+[data-theme='dark'] .wa-badge-red,
+[data-theme='dark'] .wa-btn-danger,
+[data-theme='dark'] .wa-btn-card-delete { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.35); }
+
+[data-theme='dark'] .wa-pill-tab:not(.wa-pill-tab-active):hover { background: var(--surface-hover); }
+
+[data-theme='dark'] .wa-pill-badge { background: var(--surface-hover); color: var(--text-muted); }
+
+[data-theme='dark'] .wa-selection-banner { background: var(--accent-soft); border-color: rgba(59, 130, 246, 0.35); }
+
+[data-theme='dark'] .wa-selection-info { color: #93c5fd; }
+
+[data-theme='dark'] .wa-btn-filter-active { background: var(--accent-soft) !important; color: #a5b4fc !important; }
+
+[data-theme='dark'] .wa-table-scroll::-webkit-scrollbar-thumb { background-color: var(--border-strong); }
+
+
+/* ---------- from leads.css ---------- */
+[data-theme='dark'] .leads-filter-pill.active,
+[data-theme='dark'] .leads-date-picker-box.active { border-color: #3b82f6; }
+
+[data-theme='dark'] .leads-count-pill { background: var(--accent-soft); border-color: rgba(59, 130, 246, 0.35); color: #93c5fd; }
+
+[data-theme='dark'] .leads-reset-btn { color: #93c5fd; }
+
+[data-theme='dark'] .leads-reset-btn:hover { background: var(--accent-soft); border-color: #3b82f6; }
+
+[data-theme='dark'] .leads-search-capsule:focus-within { border-color: #3b82f6; }
+
+[data-theme='dark'] .leads-act-btn.leads-act-view,
+[data-theme='dark'] .leads-act-btn.leads-act-edit { color: #93c5fd; }
+
+[data-theme='dark'] .leads-act-btn.leads-act-delete { background: rgba(239, 68, 68, 0.12); color: #f87171; border-color: rgba(239, 68, 68, 0.35); }
+
+[data-theme='dark'] .leads-table input[type="checkbox"] { background-color: var(--input-bg); }
+
+
+/* ---------- from overview.css ---------- */
+[data-theme='dark'] .overview-kpi-card,
+[data-theme='dark'] .overview-section-card { box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35); }
+
+
+/* ---------- from calls.css ---------- */
+/* ==========================================================================
+   DARK MODE for the Calls page.
+   The page uses Tailwind utility classes (bg-white, text-gray-500 ...), which
+   do not follow the theme, so the ones it uses are remapped here.
+   Intentional dark panels (bg-gray-900 / bg-gray-800 transcript areas) are left alone.
+   ========================================================================== */
+[data-theme='dark'] .calls-page .bg-white            { background-color: var(--surface); }
+
+[data-theme='dark'] .calls-page .bg-gray-50,
+[data-theme='dark'] .calls-page .bg-gray-100         { background-color: var(--surface-hover); }
+
+[data-theme='dark'] .calls-page .bg-blue-50,
+[data-theme='dark'] .calls-page .bg-blue-100         { background-color: var(--accent-soft); }
+
+[data-theme='dark'] .calls-page .bg-green-50         { background-color: var(--success-bg); }
+
+[data-theme='dark'] .calls-page .bg-red-50           { background-color: var(--danger-bg); }
+
+[data-theme='dark'] .calls-page .text-gray-900,
+[data-theme='dark'] .calls-page .text-gray-800       { color: var(--text-strong); }
+
+[data-theme='dark'] .calls-page .text-gray-700,
+[data-theme='dark'] .calls-page .text-gray-600       { color: var(--text); }
+
+[data-theme='dark'] .calls-page .text-gray-500       { color: var(--text-muted); }
+
+[data-theme='dark'] .calls-page .text-gray-400       { color: var(--text-faint); }
+
+[data-theme='dark'] .calls-page .text-blue-600,
+[data-theme='dark'] .calls-page .text-blue-700,
+[data-theme='dark'] .calls-page .text-blue-800       { color: #93c5fd; }
+
+[data-theme='dark'] .calls-page .text-green-600,
+[data-theme='dark'] .calls-page .text-green-700      { color: var(--success-fg); }
+
+[data-theme='dark'] .calls-page .text-red-500,
+[data-theme='dark'] .calls-page .text-red-700        { color: var(--danger-fg); }
+
+[data-theme='dark'] .calls-page .text-amber-700,
+[data-theme='dark'] .calls-page .text-orange-700     { color: var(--warn-fg); }
+
+[data-theme='dark'] .calls-page .border-gray-100,
+[data-theme='dark'] .calls-page .border-gray-200,
+[data-theme='dark'] .calls-page .divide-gray-50 > :not([hidden]) ~ :not([hidden]) { border-color: var(--border); }
+
+[data-theme='dark'] .calls-page .border-blue-100,
+[data-theme='dark'] .calls-page .border-blue-200     { border-color: rgba(59, 130, 246, 0.35); }
+
+[data-theme='dark'] .calls-page .border-green-100,
+[data-theme='dark'] .calls-page .border-green-200    { border-color: rgba(34, 197, 94, 0.3); }
+
+[data-theme='dark'] .calls-page .hover\:bg-gray-50:hover,
+[data-theme='dark'] .calls-page .hover\:bg-gray-100:hover { background-color: var(--surface-hover); }
+
+[data-theme='dark'] .calls-page .hover\:bg-blue-50:hover  { background-color: var(--accent-soft); }
+
+
+/* ---------- catch-all for inline React colours + form controls ---------- */
+/* ==========================================================================
+   DARK MODE — fixes for colours written INLINE in the JSX pages.
+   (Colours in CSS files already follow the theme through the variables in global.css.)
+
+   React writes style={{ background: '#fff' }} into the page as
+   style="background: rgb(255, 255, 255)", so attribute selectors can find it.
+   Every rule starts with [data-theme='dark'] -> nothing changes in light mode.
+   Load this file LAST (after all other css imports in main.jsx).
+
+   When a new colour looks wrong in dark mode: right-click it -> Inspect, copy its
+   colour, and add one line in the matching section below.
+   ========================================================================== */
+
+/* ---- page-level fixes ---- */
+[data-theme='dark'] .wa-dashboard { background-color: transparent !important; }   /* removes the black box around WhatsApp / Email / Company */
+
+/* ---- form controls without their own inline colours ---- */
+[data-theme='dark'] input:not([type='checkbox']):not([type='radio']):not([type='range']),
+[data-theme='dark'] select,
+[data-theme='dark'] textarea {
+  background-color: var(--input-bg);
+  color: var(--text-strong);
+  border-color: var(--border-strong);
+}
+[data-theme='dark'] input::placeholder,
+[data-theme='dark'] textarea::placeholder { color: var(--text-faint); }
+[data-theme='dark'] select option { background: #131b2e; color: #f1f5f9; }
+
+/* ======================= BACKGROUNDS ======================= */
+/* white -> card */
+[data-theme='dark'] [style*="background: rgb(255, 255, 255)"],
+[data-theme='dark'] [style*="background-color: rgb(255, 255, 255)"] { background: var(--surface) !important; }
+
+/* near-white greys -> raised */
+[data-theme='dark'] [style*="background: rgb(248, 250, 252)"],
+[data-theme='dark'] [style*="background-color: rgb(248, 250, 252)"],
+[data-theme='dark'] [style*="background: rgb(241, 245, 249)"],
+[data-theme='dark'] [style*="background-color: rgb(241, 245, 249)"],
+[data-theme='dark'] [style*="background: rgb(249, 250, 251)"],
+[data-theme='dark'] [style*="background-color: rgb(249, 250, 251)"],
+[data-theme='dark'] [style*="background: rgb(243, 244, 246)"],
+[data-theme='dark'] [style*="background-color: rgb(243, 244, 246)"] { background: var(--surface-hover) !important; }
+
+/* table header tone */
+[data-theme='dark'] [style*="background: rgb(248, 251, 255)"],
+[data-theme='dark'] [style*="background-color: rgb(248, 251, 255)"] { background: var(--surface-sunken) !important; }
+
+/* grey tracks / dividers used as background */
+[data-theme='dark'] [style*="background: rgb(226, 232, 240)"],
+[data-theme='dark'] [style*="background-color: rgb(226, 232, 240)"] { background: var(--border) !important; }
+
+/* blue tints */
+[data-theme='dark'] [style*="background: rgb(239, 246, 255)"],
+[data-theme='dark'] [style*="background-color: rgb(239, 246, 255)"],
+[data-theme='dark'] [style*="background: rgb(238, 242, 255)"],
+[data-theme='dark'] [style*="background-color: rgb(238, 242, 255)"],
+[data-theme='dark'] [style*="background: rgb(219, 234, 254)"],
+[data-theme='dark'] [style*="background-color: rgb(219, 234, 254)"],
+[data-theme='dark'] [style*="background: rgb(224, 242, 254)"],
+[data-theme='dark'] [style*="background-color: rgb(224, 242, 254)"],
+[data-theme='dark'] [style*="background: rgb(240, 247, 255)"],
+[data-theme='dark'] [style*="background-color: rgb(240, 247, 255)"] { background: var(--accent-soft) !important; }
+
+/* red tints */
+[data-theme='dark'] [style*="background: rgb(254, 242, 242)"],
+[data-theme='dark'] [style*="background-color: rgb(254, 242, 242)"],
+[data-theme='dark'] [style*="background: rgb(254, 226, 226)"],
+[data-theme='dark'] [style*="background-color: rgb(254, 226, 226)"] { background: var(--danger-bg) !important; }
+
+/* green tints */
+[data-theme='dark'] [style*="background: rgb(240, 253, 244)"],
+[data-theme='dark'] [style*="background-color: rgb(240, 253, 244)"],
+[data-theme='dark'] [style*="background: rgb(220, 252, 231)"],
+[data-theme='dark'] [style*="background-color: rgb(220, 252, 231)"],
+[data-theme='dark'] [style*="background: rgb(236, 253, 245)"],
+[data-theme='dark'] [style*="background-color: rgb(236, 253, 245)"] { background: var(--success-bg) !important; }
+
+/* amber / orange tints */
+[data-theme='dark'] [style*="background: rgb(255, 251, 235)"],
+[data-theme='dark'] [style*="background-color: rgb(255, 251, 235)"],
+[data-theme='dark'] [style*="background: rgb(254, 249, 195)"],
+[data-theme='dark'] [style*="background-color: rgb(254, 249, 195)"],
+[data-theme='dark'] [style*="background: rgb(254, 243, 199)"],
+[data-theme='dark'] [style*="background-color: rgb(254, 243, 199)"],
+[data-theme='dark'] [style*="background: rgb(255, 247, 237)"],
+[data-theme='dark'] [style*="background-color: rgb(255, 247, 237)"] { background: var(--warn-bg) !important; }
+
+/* purple tints */
+[data-theme='dark'] [style*="background: rgb(250, 245, 255)"],
+[data-theme='dark'] [style*="background-color: rgb(250, 245, 255)"],
+[data-theme='dark'] [style*="background: rgb(243, 232, 255)"],
+[data-theme='dark'] [style*="background-color: rgb(243, 232, 255)"] { background: rgba(168, 85, 247, 0.16) !important; }
+
+/* ======================= TEXT ======================= */
+/* leading space / ^ stops 'background-color' from matching */
+/* darkest text */
+[data-theme='dark'] [style*=" color: rgb(15, 23, 42)"],
+[data-theme='dark'] [style^="color: rgb(15, 23, 42)"],
+[data-theme='dark'] [style*=" color: rgb(17, 24, 39)"],
+[data-theme='dark'] [style^="color: rgb(17, 24, 39)"],
+[data-theme='dark'] [style*=" color: rgb(31, 41, 55)"],
+[data-theme='dark'] [style^="color: rgb(31, 41, 55)"],
+[data-theme='dark'] [style*=" color: rgb(30, 41, 59)"],
+[data-theme='dark'] [style^="color: rgb(30, 41, 59)"] { color: var(--text-strong) !important; }
+
+/* body text */
+[data-theme='dark'] [style*=" color: rgb(51, 65, 85)"],
+[data-theme='dark'] [style^="color: rgb(51, 65, 85)"],
+[data-theme='dark'] [style*=" color: rgb(71, 85, 105)"],
+[data-theme='dark'] [style^="color: rgb(71, 85, 105)"],
+[data-theme='dark'] [style*=" color: rgb(55, 65, 81)"],
+[data-theme='dark'] [style^="color: rgb(55, 65, 81)"] { color: var(--text) !important; }
+
+/* muted text */
+[data-theme='dark'] [style*=" color: rgb(100, 116, 139)"],
+[data-theme='dark'] [style^="color: rgb(100, 116, 139)"],
+[data-theme='dark'] [style*=" color: rgb(107, 114, 128)"],
+[data-theme='dark'] [style^="color: rgb(107, 114, 128)"] { color: var(--text-muted) !important; }
+
+/* faint text */
+[data-theme='dark'] [style*=" color: rgb(148, 163, 184)"],
+[data-theme='dark'] [style^="color: rgb(148, 163, 184)"] { color: var(--text-faint) !important; }
+
+/* red text */
+[data-theme='dark'] [style*=" color: rgb(185, 28, 28)"],
+[data-theme='dark'] [style^="color: rgb(185, 28, 28)"],
+[data-theme='dark'] [style*=" color: rgb(220, 38, 38)"],
+[data-theme='dark'] [style^="color: rgb(220, 38, 38)"],
+[data-theme='dark'] [style*=" color: rgb(239, 68, 68)"],
+[data-theme='dark'] [style^="color: rgb(239, 68, 68)"],
+[data-theme='dark'] [style*=" color: rgb(153, 27, 27)"],
+[data-theme='dark'] [style^="color: rgb(153, 27, 27)"] { color: var(--danger-fg) !important; }
+
+/* green text */
+[data-theme='dark'] [style*=" color: rgb(21, 128, 61)"],
+[data-theme='dark'] [style^="color: rgb(21, 128, 61)"],
+[data-theme='dark'] [style*=" color: rgb(22, 101, 52)"],
+[data-theme='dark'] [style^="color: rgb(22, 101, 52)"],
+[data-theme='dark'] [style*=" color: rgb(4, 120, 87)"],
+[data-theme='dark'] [style^="color: rgb(4, 120, 87)"],
+[data-theme='dark'] [style*=" color: rgb(22, 163, 74)"],
+[data-theme='dark'] [style^="color: rgb(22, 163, 74)"] { color: var(--success-fg) !important; }
+
+/* amber / orange text */
+[data-theme='dark'] [style*=" color: rgb(180, 83, 9)"],
+[data-theme='dark'] [style^="color: rgb(180, 83, 9)"],
+[data-theme='dark'] [style*=" color: rgb(194, 65, 12)"],
+[data-theme='dark'] [style^="color: rgb(194, 65, 12)"],
+[data-theme='dark'] [style*=" color: rgb(146, 64, 14)"],
+[data-theme='dark'] [style^="color: rgb(146, 64, 14)"] { color: var(--warn-fg) !important; }
+
+/* blue text */
+[data-theme='dark'] [style*=" color: rgb(29, 78, 216)"],
+[data-theme='dark'] [style^="color: rgb(29, 78, 216)"],
+[data-theme='dark'] [style*=" color: rgb(30, 64, 175)"],
+[data-theme='dark'] [style^="color: rgb(30, 64, 175)"],
+[data-theme='dark'] [style*=" color: rgb(37, 99, 235)"],
+[data-theme='dark'] [style^="color: rgb(37, 99, 235)"],
+[data-theme='dark'] [style*=" color: rgb(0, 118, 255)"],
+[data-theme='dark'] [style^="color: rgb(0, 118, 255)"] { color: #93c5fd !important; }
+
+/* purple text */
+[data-theme='dark'] [style*=" color: rgb(126, 34, 206)"],
+[data-theme='dark'] [style^="color: rgb(126, 34, 206)"],
+[data-theme='dark'] [style*=" color: rgb(109, 40, 217)"],
+[data-theme='dark'] [style^="color: rgb(109, 40, 217)"] { color: #d8b4fe !important; }
+
+/* indigo text */
+[data-theme='dark'] [style*=" color: rgb(67, 56, 202)"],
+[data-theme='dark'] [style^="color: rgb(67, 56, 202)"],
+[data-theme='dark'] [style*=" color: rgb(79, 70, 229)"],
+[data-theme='dark'] [style^="color: rgb(79, 70, 229)"] { color: #a5b4fc !important; }
+
+/* cyan text */
+[data-theme='dark'] [style*=" color: rgb(14, 116, 144)"],
+[data-theme='dark'] [style^="color: rgb(14, 116, 144)"],
+[data-theme='dark'] [style*=" color: rgb(2, 132, 199)"],
+[data-theme='dark'] [style^="color: rgb(2, 132, 199)"] { color: #67e8f9 !important; }
+
+/* rose text */
+[data-theme='dark'] [style*=" color: rgb(225, 29, 72)"],
+[data-theme='dark'] [style^="color: rgb(225, 29, 72)"] { color: #fb7185 !important; }
+
+/* ======================= BORDERS ======================= */
+/* light grey / pale blue borders */
+[data-theme='dark'] [style*="rgb(226, 232, 240)"],
+[data-theme='dark'] [style*="rgb(203, 213, 225)"],
+[data-theme='dark'] [style*="rgb(229, 231, 235)"],
+[data-theme='dark'] [style*="rgb(241, 245, 249)"],
+[data-theme='dark'] [style*="rgb(226, 236, 248)"],
+[data-theme='dark'] [style*="rgba(220, 234, 250, 0.95)"],
+[data-theme='dark'] [style*="rgba(224, 236, 250, 0.9)"],
+[data-theme='dark'] [style*="rgba(214, 228, 246, 0.9)"],
+[data-theme='dark'] [style*="rgba(220, 232, 248, 0.9)"] { border-color: var(--border) !important; }
+
+[data-theme='dark'] [style*="solid rgb(254, 202, 202)"] { border-color: rgba(239, 68, 68, 0.35) !important; }
+[data-theme='dark'] [style*="solid rgb(187, 247, 208)"] { border-color: rgba(34, 197, 94, 0.3) !important; }
+[data-theme='dark'] [style*="solid rgb(167, 243, 208)"] { border-color: rgba(16, 185, 129, 0.3) !important; }
+[data-theme='dark'] [style*="solid rgb(191, 219, 254)"] { border-color: rgba(59, 130, 246, 0.35) !important; }
+[data-theme='dark'] [style*="solid rgb(219, 234, 254)"] { border-color: rgba(59, 130, 246, 0.3) !important; }
+[data-theme='dark'] [style*="solid rgb(253, 230, 138)"] { border-color: rgba(245, 158, 11, 0.35) !important; }
+[data-theme='dark'] [style*="solid rgb(254, 215, 170)"] { border-color: rgba(249, 115, 22, 0.35) !important; }
+[data-theme='dark'] [style*="solid rgb(233, 213, 255)"] { border-color: rgba(168, 85, 247, 0.35) !important; }
+[data-theme='dark'] [style*="solid rgb(199, 210, 254)"] { border-color: rgba(99, 102, 241, 0.35) !important; }
+[data-theme='dark'] [style*="solid rgb(186, 230, 253)"] { border-color: rgba(14, 165, 233, 0.35) !important; }
+
+/* ---- scrollbars + dividers inside tables ---- */
+[data-theme='dark'] ::-webkit-scrollbar-thumb { background-color: var(--border-strong); border-radius: 8px; }
+[data-theme='dark'] ::-webkit-scrollbar-track { background: transparent; }
+
+
+/* ======================= HOVER FIXES ======================= */
+[data-theme='dark'] tr:hover td,
+[data-theme='dark'] tbody tr:hover,
+[data-theme='dark'] .wa-cards-table tbody tr:hover td { background-color: var(--surface-hover) !important; color: var(--text-strong) !important; }
+[data-theme='dark'] .sidebar-toggle:hover { background: var(--accent-soft); color: #93c5fd; }
+/* hover colours set from JS (onMouseEnter) land as inline styles: keep them dark + readable */
+[data-theme='dark'] [style*="background-color: rgb(226, 232, 240)"][style*="color: rgb(15, 23, 42)"] { background-color: var(--surface-hover) !important; color: var(--text-strong) !important; }
+[data-theme='dark'] button:hover, [data-theme='dark'] a:hover { color: inherit; }
+
+/* ======================= VIOLET / ORANGE / AMBER TEXT (too dark on dark bg) ======================= */
+[data-theme='dark'] [style*=" color: rgb(126, 34, 206)"],  [data-theme='dark'] [style^="color: rgb(126, 34, 206)"],
+[data-theme='dark'] [style*=" color: rgb(109, 40, 217)"],  [data-theme='dark'] [style^="color: rgb(109, 40, 217)"],
+[data-theme='dark'] [style*=" color: rgb(124, 58, 237)"],  [data-theme='dark'] [style^="color: rgb(124, 58, 237)"],
+[data-theme='dark'] [style*=" color: rgb(147, 51, 234)"],  [data-theme='dark'] [style^="color: rgb(147, 51, 234)"],
+[data-theme='dark'] [style*=" color: rgb(91, 33, 182)"],   [data-theme='dark'] [style^="color: rgb(91, 33, 182)"] { color: #d8b4fe !important; }
+[data-theme='dark'] [style*=" color: rgb(194, 65, 12)"],   [data-theme='dark'] [style^="color: rgb(194, 65, 12)"],
+[data-theme='dark'] [style*=" color: rgb(180, 83, 9)"],    [data-theme='dark'] [style^="color: rgb(180, 83, 9)"],
+[data-theme='dark'] [style*=" color: rgb(146, 64, 14)"],   [data-theme='dark'] [style^="color: rgb(146, 64, 14)"] { color: #fdba74 !important; }
+[data-theme='dark'] [style*=" color: rgb(29, 78, 216)"],   [data-theme='dark'] [style^="color: rgb(29, 78, 216)"],
+[data-theme='dark'] [style*=" color: rgb(30, 64, 175)"],   [data-theme='dark'] [style^="color: rgb(30, 64, 175)"],
+[data-theme='dark'] [style*=" color: rgb(37, 99, 235)"],   [data-theme='dark'] [style^="color: rgb(37, 99, 235)"] { color: #93c5fd !important; }
+/* purple tints / borders */
+[data-theme='dark'] [style*="border: 1px solid rgb(233, 213, 255)"] { border-color: rgba(168, 85, 247, 0.35) !important; }
+
+
+/* ======================= ACCESS CONTROL + TABLE HEADERS ======================= */
+[data-theme='dark'] th,
+[data-theme='dark'] thead,
+[data-theme='dark'] thead tr { background-color: var(--surface-sunken) !important; color: var(--text-muted) !important; }
+[data-theme='dark'] .table-container table { background: transparent; }
+/* dark purple text (#581c87, #4c1d95, #3b0764, #6b21a8) -> light lavender */
+[data-theme='dark'] [style*=" color: rgb(88, 28, 135)"],  [data-theme='dark'] [style^="color: rgb(88, 28, 135)"],
+[data-theme='dark'] [style*=" color: rgb(76, 29, 149)"],  [data-theme='dark'] [style^="color: rgb(76, 29, 149)"],
+[data-theme='dark'] [style*=" color: rgb(59, 7, 100)"],   [data-theme='dark'] [style^="color: rgb(59, 7, 100)"],
+[data-theme='dark'] [style*=" color: rgb(107, 33, 168)"], [data-theme='dark'] [style^="color: rgb(107, 33, 168)"] { color: #e9d5ff !important; }
+[data-theme='dark'] [style*=" color: rgb(88, 28, 135)"] strong,
+[data-theme='dark'] [style*=" color: rgb(88, 28, 135)"] * { color: #f3e8ff !important; }

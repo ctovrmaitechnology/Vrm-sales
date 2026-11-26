@@ -25,7 +25,7 @@
   font-weight: 800;
   margin: 0;
   letter-spacing: -0.025em;
-  color: #0f172a;
+  color: var(--text-strong);
 }
 
 .overview-title-accent {
@@ -34,7 +34,7 @@
 
 .overview-subtitle {
   font-size: 0.875rem;
-  color: #64748b;
+  color: var(--text-muted);
   margin: 0.35rem 0 0;
 }
 
@@ -44,20 +44,20 @@
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  background: #ffffff;
-  border: 1px solid rgba(220, 234, 250, 0.95);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
   border-radius: 10px;
   font-size: 0.85rem;
   font-weight: 500;
-  color: #334155;
+  color: var(--text);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .overview-date-pill:hover {
-  background: #f8fbff;
-  border-color: #cbd5e1;
+  background: var(--surface-sunken);
+  border-color: var(--border-strong);
 }
 
 /* Primary Action Button */
@@ -92,10 +92,10 @@
 }
 
 .overview-kpi-card {
-  background-color: #ffffff;
+  background-color: var(--surface);
   border-radius: 16px;
   padding: 1.25rem;
-  border: 1px solid rgba(220, 234, 250, 0.95);
+  border: 1px solid var(--border-soft);
   box-shadow: 0 4px 18px rgba(180, 205, 235, 0.16);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
@@ -120,28 +120,10 @@
 
 /* Section Cards */
 .overview-section-card {
-  background-color: #ffffff;
+  background-color: var(--surface);
   border-radius: 16px;
   padding: 1.5rem;
   margin-bottom: 2rem;
-  border: 1px solid rgba(220, 234, 250, 0.95);
+  border: 1px solid var(--border-soft);
   box-shadow: 0 4px 18px rgba(180, 205, 235, 0.14);
-}
-
-/* Dark Theme Adaptations */
-[data-theme='dark'] .overview-title {
-  color: #f1f5f9;
-}
-
-[data-theme='dark'] .overview-date-pill {
-  background: #192338;
-  border-color: #26354f;
-  color: #94a3b8;
-}
-
-[data-theme='dark'] .overview-kpi-card,
-[data-theme='dark'] .overview-section-card {
-  background-color: #131b2e;
-  border-color: #1e293b;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35);
 }

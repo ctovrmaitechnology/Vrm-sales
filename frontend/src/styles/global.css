@@ -1,19 +1,48 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+/* ==========================================================================
+   THEME TOKENS — change colours here; every page follows.
+   Use var(--surface), var(--text-muted), var(--border) ... in CSS and inline styles.
+   ========================================================================== */
 :root {
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
   --primary-light: #eff6ff;
-  --text-dark: #0f172a;
+
+  /* surfaces */
+  --surface: #ffffff;          /* cards, rows, modals */
+  --surface-hover: #f8fafc;    /* row hover, soft buttons */
+  --surface-sunken: #f8fbff;   /* table header, footer */
+  --surface-selected: #f0f7ff; /* selected row */
+  --accent-soft: #eff6ff;      /* light blue tint */
+  --input-bg: #ffffff;
+
+  /* lines */
+  --border: #e2e8f0;
+  --border-soft: rgba(220, 234, 250, 0.95);
+  --border-strong: #cbd5e1;
+
+  /* text */
+  --text-strong: #0f172a;
+  --text: #334155;
   --text-muted: #64748b;
+  --text-faint: #94a3b8;
+
+  /* status tints */
+  --success-bg: #f0fdf4;  --success-fg: #16a34a;
+  --danger-bg:  #fef2f2;  --danger-fg:  #dc2626;
+  --warn-bg:    #fffbeb;  --warn-fg:    #b45309;
+
+  /* original names, kept so existing CSS keeps working */
+  --text-dark: #0f172a;
   --bg-page: #f4f8ff;
   --bg-card: #ffffff;
   --border-color: #e2eaf6;
-  
+
   --shadow-sm: 0 1px 3px 0 rgba(148, 163, 184, 0.08);
   --shadow-md: 0 4px 16px -2px rgba(148, 163, 184, 0.12), 0 2px 6px -1px rgba(148, 163, 184, 0.06);
   --shadow-lg: 0 12px 28px -4px rgba(148, 163, 184, 0.16), 0 4px 12px -2px rgba(148, 163, 184, 0.08);
-  
+
   --radius-md: 0.625rem;
   --radius-lg: 1rem;
   --radius-xl: 1.5rem;
@@ -712,7 +741,7 @@ th {
   font-weight: 600;
   color: var(--text-muted);
   font-size: 0.8rem;
-  background-color: #f8fbff;
+  background-color: var(--surface-sunken);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -726,7 +755,7 @@ tr:last-child td {
 }
 
 tr:hover td {
-  background-color: #f8fbff;
+  background-color: var(--surface-hover);
 }
 
 .badge {
@@ -825,215 +854,9 @@ tr:hover td {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ==========================================================================
-   DARK THEME STYLING
-   ========================================================================== */
-[data-theme='dark'] {
-  --text-dark: #f1f5f9;
-  --text-muted: #94a3b8;
-  --bg-page: #0b0f19;
-  --bg-card: #131b2e;
-  --border-color: #1e293b;
-  --primary-light: rgba(37, 99, 235, 0.2);
-  --primary: #3b82f6;
-}
-
-/* Dark Theme Aurora Adjustments */
-[data-theme='dark'] .aurora-canvas-wrap {
-  background-color: #0b0f19;
-}
-
-[data-theme='dark'] .aurora-mesh-gradient {
-  background-image:
-    radial-gradient(ellipse 65% 55% at 5% 0%, #1e293b 0%, rgba(30, 41, 59, 0.4) 45%, transparent 70%),
-    radial-gradient(ellipse 70% 60% at 95% 5%, #172554 0%, rgba(23, 37, 84, 0.4) 40%, transparent 70%),
-    radial-gradient(ellipse 60% 50% at 50% 22%, #1e3a8a 0%, rgba(30, 58, 138, 0.3) 45%, transparent 80%),
-    radial-gradient(ellipse 60% 55% at 85% 85%, #172554 0%, rgba(23, 37, 84, 0.35) 45%, transparent 75%);
-  opacity: 0.85;
-}
-
-[data-theme='dark'] .aurora-orb-top-left {
-  background: radial-gradient(circle, rgba(30, 58, 138, 0.35) 0%, transparent 75%);
-}
-
-[data-theme='dark'] .aurora-orb-top-right {
-  background: radial-gradient(circle, rgba(37, 99, 235, 0.25) 0%, transparent 80%);
-}
-
-[data-theme='dark'] .aurora-orb-center-white {
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 85%);
-}
-
-[data-theme='dark'] .aurora-orb-bottom-accent {
-  background: radial-gradient(circle, rgba(29, 78, 216, 0.2) 0%, transparent 80%);
-}
-
-[data-theme='dark'] .aurora-wave-shape-1 {
-  fill: url(#aurora-dark-grad-1) !important;
-  opacity: 0.4;
-}
-
-[data-theme='dark'] .aurora-wave-shape-2 {
-  fill: url(#aurora-dark-grad-2) !important;
-  opacity: 0.25;
-}
-
-[data-theme='dark'] .aurora-wave-shape-3,
-[data-theme='dark'] .aurora-wave-shape-4 {
-  opacity: 0.15;
-}
-
-[data-theme='dark'] .aurora-wave-edge-1,
-[data-theme='dark'] .aurora-wave-edge-2,
-[data-theme='dark'] .aurora-wave-edge-3 {
-  stroke: rgba(96, 165, 250, 0.25) !important;
-  filter: none;
-}
-
-[data-theme='dark'] .sidebar {
-  background: linear-gradient(180deg, #101726 0%, #131c2e 50%, #0d1322 100%);
-  border-right-color: #1e293b;
-  box-shadow: 2px 0 24px rgba(0, 0, 0, 0.35);
-}
-
-[data-theme='dark'] .sidebar-upgrade-card {
-  background: #192338;
-  border-color: #26354f;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-
-[data-theme='dark'] .sidebar-upgrade-card .sidebar-upgrade-btn {
-  background: #2563eb;
-}
-
-[data-theme='dark'] .navbar {
-  background: rgba(19, 27, 46, 0.82);
-  border-bottom-color: #1e293b;
-}
-
-[data-theme='dark'] .card,
-[data-theme='dark'] .dashboard-section,
-[data-theme='dark'] .table-container {
-  background-color: var(--bg-card);
-  border-color: #1e293b;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35);
-}
-
-[data-theme='dark'] .nav-link {
-  color: #94a3b8;
-}
-
-[data-theme='dark'] .nav-link:hover {
-  background-color: rgba(37, 99, 235, 0.2);
-  color: #60a5fa;
-}
-
-[data-theme='dark'] .nav-link.active {
-  background-color: #2563eb;
-  color: #ffffff;
-}
-
 /* Ensure smooth transition for theme switching */
 body, .sidebar, .navbar, .wa-dashboard, .wa-card, .wa-table-container, .card, .dashboard-section, input, button, table, th, td, tr {
   transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
-}
-
-/* Legacy WA Layout Adjustment for Dark Mode */
-[data-theme='dark'] .wa-dashboard {
-  background-color: var(--bg-page) !important;
-}
-
-[data-theme='dark'] .wa-card {
-  background-color: var(--bg-card) !important;
-  border-color: var(--border-color) !important;
-}
-
-[data-theme='dark'] .wa-card:not(.wa-card-blue):not(.wa-card-green):not(.wa-card-purple) .wa-card-value-default {
-  color: var(--text-dark) !important;
-}
-
-[data-theme='dark'] .wa-card-label-default {
-  color: var(--text-muted) !important;
-}
-
-[data-theme='dark'] .wa-table-container {
-  background-color: var(--bg-card) !important;
-  border-color: var(--border-color) !important;
-}
-
-[data-theme='dark'] .wa-table {
-  color: var(--text-dark) !important;
-}
-
-[data-theme='dark'] .wa-table thead {
-  background-color: var(--bg-page) !important;
-  border-bottom-color: var(--border-color) !important;
-}
-
-[data-theme='dark'] .wa-table th {
-  color: var(--text-muted) !important;
-}
-
-[data-theme='dark'] .wa-table tr {
-  border-bottom-color: var(--border-color) !important;
-}
-
-[data-theme='dark'] .wa-table-row-default {
-  background-color: var(--bg-card) !important;
-}
-
-[data-theme='dark'] .wa-table-row-default:hover {
-  background-color: var(--bg-page) !important;
-}
-
-[data-theme='dark'] .wa-text-primary {
-  color: var(--text-dark) !important;
-}
-
-[data-theme='dark'] .wa-text-secondary {
-  color: var(--text-muted) !important;
-}
-
-[data-theme='dark'] .wa-badge-gray {
-  background-color: var(--border-color) !important;
-  color: var(--text-dark) !important;
-}
-
-[data-theme='dark'] .wa-table-row-success {
-  background-color: rgba(16, 185, 129, 0.15) !important;
-}
-
-[data-theme='dark'] .wa-table-row-success:hover {
-  background-color: rgba(16, 185, 129, 0.25) !important;
-}
-
-[data-theme='dark'] .wa-btn-danger {
-  background-color: rgba(239, 68, 68, 0.15) !important;
-}
-
-[data-theme='dark'] .wa-btn-danger:hover {
-  background-color: rgba(239, 68, 68, 0.25) !important;
-}
-
-[data-theme='dark'] .avatar {
-  background: linear-gradient(135deg, var(--primary), #818cf8) !important;
-}
-
-/* Ensure inputs are visible in dark mode */
-[data-theme='dark'] .form-control {
-  background-color: var(--bg-page) !important;
-  color: var(--text-dark) !important;
-  border-color: var(--border-color) !important;
-}
-
-[data-theme='dark'] .btn-secondary {
-  background-color: var(--bg-card) !important;
-  color: var(--text-dark) !important;
-  border-color: var(--border-color) !important;
-}
-
-[data-theme='dark'] .btn-secondary:hover {
-  background-color: var(--bg-page) !important;
 }
 /* Collapsible sidebar */
 .sidebar { transition: width 0.2s ease; overflow: visible; }
@@ -1055,7 +878,7 @@ body, .sidebar, .navbar, .wa-dashboard, .wa-card, .wa-table-container, .card, .d
   flex-shrink: 0;
   transition: all 0.15s ease;
 }
-.sidebar-toggle:hover { color: #2563eb; background: #eff6ff; }
+.sidebar-toggle:hover { color: var(--primary); background: var(--accent-soft); }
 
 .sidebar-collapsed .sidebar { width: 76px; }
 .sidebar-collapsed .main-content {
@@ -1098,12 +921,6 @@ body, .sidebar, .navbar, .wa-dashboard, .wa-card, .wa-table-container, .card, .d
   right: auto !important;
   width: 150px;
 }
-
-[data-theme='dark'] .sidebar-toggle {
-  background: #1e293b;
-  border-color: #334155;
-  color: #cbd5e1;
-}
 /* Sidebar header order: [logo] [VRM Sales Agent] [toggle] */
 .sidebar-header { gap: 0.7rem; }
 
@@ -1132,14 +949,18 @@ body, .sidebar, .navbar, .wa-dashboard, .wa-card, .wa-table-container, .card, .d
 /* Collapsed: logo on top, toggle underneath */
 .sidebar-collapsed .sidebar-header .sidebar-logo { order: 1; }
 .sidebar-collapsed .sidebar-header .sidebar-toggle { order: 2; }
-
-[data-theme='dark'] .sidebar-header .sidebar-toggle {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: #ffffff;
-  border: none;
-}
 .sidebar-collapsed .sidebar-header .sidebar-brand-text {
   display: none !important;
 }
 .sidebar { overflow: hidden; }
 .sidebar-header .sidebar-brand-text { white-space: nowrap; overflow: hidden; }
+/* ===== Auto-hide sidebar: rail normally, opens over the page on hover ===== */
+.sidebar-unpinned .main-content {
+  margin-left: 76px;
+  max-width: calc(100vw - 76px);
+  width: calc(100% - 76px);
+}
+.sidebar-unpinned .sidebar { z-index: 60; }
+.sidebar-unpinned:not(.sidebar-collapsed) .sidebar { box-shadow: 8px 0 32px rgba(15, 23, 42, 0.18); }
+.sidebar-collapsed .sidebar-user-text,
+.sidebar-collapsed .sidebar-user-chevron { display: none !important; }
