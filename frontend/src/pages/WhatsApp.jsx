@@ -1,3 +1,4 @@
+import { getUser, isSuperAdmin } from '../utils/auth';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -956,13 +957,15 @@ const WhatsApp = () => {
                         >
                           <MoreVertical size={15} />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => deleteLead(lead)}
-                          className="wa-btn-card-delete"
-                        >
-                          <Trash2 size={12} /> Delete
-                        </button>
+                        {(isSuperAdmin() || (lead.user_id && lead.user_id === getUser()?.id)) && (
+                          <button
+                            type="button"
+                            onClick={() => deleteLead(lead)}
+                            className="wa-btn-card-delete"
+                          >
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1517,13 +1520,6 @@ const WhatsApp = () => {
             <span>{selectedContacts.size} contact{selectedContacts.size === 1 ? '' : 's'} selected</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button
-              type="button"
-              onClick={deleteSelectedLeads}
-              className="wa-btn-danger"
-            >
-              Delete selected
-            </button>
             <button
               type="button"
               onClick={() => setSelectedContacts(new Set())}

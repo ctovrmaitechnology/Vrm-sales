@@ -1,3 +1,4 @@
+import { isSuperAdmin, getUser } from '../utils/auth';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import '../styles/whatsapp.css';
 import {
@@ -867,15 +868,6 @@ export default function Dashboard() {
             <span>{selectedCount} contact{selectedCount === 1 ? '' : 's'} selected</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem' }}>
-            {currentPage === 'leads' && (
-              <button
-                type="button"
-                onClick={deleteSelectedLeads}
-                style={{ display:'inline-flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 1rem', borderRadius:'8px', border:'1px solid #dc2626', background:'#dc2626', color:'#ffffff', fontSize:'0.82rem', fontWeight:600, cursor:'pointer' }}
-              >
-                Delete selected
-              </button>
-            )}
             <button
               type="button"
               onClick={() => {
@@ -1097,12 +1089,14 @@ export default function Dashboard() {
                                 <Send size={12} /> Send
                               </button>
                             )}
-                            <button
-                              onClick={() => deleteLead(lead.email)}
-                              className="wa-btn-card-delete"
-                            >
-                              <Trash2 size={12} /> Delete
-                            </button>
+                            {(isSuperAdmin() || lead.user_id === getUser()?.id) && (
+                              <button
+                                onClick={() => deleteLead(lead.email)}
+                                className="wa-btn-card-delete"
+                              >
+                                <Trash2 size={12} /> Delete
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1182,7 +1176,7 @@ export default function Dashboard() {
                           </span>
                         </td>
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          {!item.isCompany && (
+                                                    {!item.isCompany && (isSuperAdmin() || item.raw?.user_id === getUser()?.id) && (
                             <button
                               onClick={() => deleteLead(item.email)}
                               className="wa-btn-card-delete"
