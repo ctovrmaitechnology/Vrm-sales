@@ -1,25 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import AuroraBackground from './AuroraBackground';
 
+// Sidebar is always auto-hide: an icon rail that opens over the page while the cursor is on it.
 const Layout = () => {
-  const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem('vrm_sidebar_collapsed') === '1'; } catch { return false; }
-  });
+  const [hovered, setHovered] = useState(false);
+  const timer = useRef(null);
 
-  const toggleSidebar = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try { localStorage.setItem('vrm_sidebar_collapsed', next ? '1' : '0'); } catch { /* ignore */ }
-      return next;
-    });
-  };
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  // small delays so the sidebar does not flicker when the mouse just passes over it
+  const enter = () => { clearTimeout(timer.current); timer.current = setTimeout(() => setHovered(true), 90); };
+  const leave = () => { clearTimeout(timer.current); timer.current = setTimeout(() => setHovered(false), 160); };
+
+  const classes = ['layout-container', 'sidebar-unpinned'];
+  if (!hovered) classes.push('sidebar-collapsed');
 
   return (
-    <div className={`layout-container${collapsed ? ' sidebar-collapsed' : ''}`}>
+    <div className={classes.join(' ')}>
       <AuroraBackground />
-      <Sidebar collapsed={collapsed} onToggle={toggleSidebar} />
+      <div style={{ display: 'contents' }} onMouseEnter={enter} onMouseLeave={leave}>
+        <Sidebar collapsed />
+      </div>
       <main className="main-content">
         <div className="page-content">
           <Outlet />

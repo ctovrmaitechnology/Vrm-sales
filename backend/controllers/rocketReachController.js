@@ -1,8 +1,8 @@
 const axios = require('axios');
 const xlsx = require('xlsx');
-
+const prisma = require('../prismaClient');
 const RR_BASE = 'https://api.rocketreach.co/api/v2';
-const MAX_RESULTS = 25;
+const MAX_RESULTS = 50;
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
 
 // Same headers (same order) as the Leads page import template.
@@ -110,6 +110,36 @@ async function parseWithClaude(prompt) {
   const json = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
   return JSON.parse(json);
 }
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const PARSE_SYSTEM = [
+  'You convert a request for a B2B lead list into search filters for RocketReach (sales team in India selling to companies).',
+  'Reply with ONLY one JSON object with exactly these keys:',
+  'job_titles (array of strings), seniority (array, each one of: C-Suite, VP, Director, Manager, Head, Founder, Senior, Entry),',
+  'departments (array), locations (array of full country/state/city names), industries (array of strings),',
+  'company_names (array), min_employees (integer or null), keywords (string), limit (integer 1-50, default 10).',
+  'RULES:',
+  '1) "decision makers" / "decision-makers" / "owners" means seniority ["C-Suite","Founder","VP","Director"] and job_titles ["CEO","Founder","Co-Founder","Managing Director","Director","Owner","President","COO","CTO","CFO","VP","Head of Operations"].',
+  '2) Split lists: "CEOs, founders and directors" becomes separate items in job_titles - never one combined string.',
+  '3) Industries: BPO -> ["Outsourcing/Offshoring","Business Process Outsourcing"]; IT -> ["Information Technology & Services","Computer Software"]; Recruitment / staffing -> ["Staffing & Recruiting"]; "non IT" -> use the specific industries the user names (Manufacturing, Retail, Healthcare, Financial Services, Real Estate, Education...), if none named leave industries empty and put "non-IT" in keywords. If the user lists several (BPO, IT, recruitment) put all of them in industries.',
+  '4) If no location is given, use ["India"].',
+  '5) Roles the user names (HR, Operations, Sales, Procurement...) go to departments and job_titles.',
+  '6) Use empty arrays / null / "" for anything not stated. Never invent company names.',
+].join(' ');
+
+async function parseWithGemini(prompt) {
+  const { data } = await axios.post(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+    {
+      systemInstruction: { parts: [{ text: PARSE_SYSTEM }] },
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+    },
+    { headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY, 'content-type': 'application/json' }, timeout: 30000 }
+  );
+  const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+  const json = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
+  return JSON.parse(json);
+}
 
 // POST /api/rocketreach/parse   body: { prompt, limit? }
 async function parsePrompt(req, res) {
@@ -117,7 +147,15 @@ async function parsePrompt(req, res) {
   if (prompt.length < 3) return res.status(400).json({ error: 'Type what kind of leads you want.' });
   let raw;
   let via = 'basic';
-  if ((process.env.ANTHROPIC_API_KEY || '').trim()) {
+  if ((process.env.GEMINI_API_KEY || '').trim()) {
+    try {
+      raw = await parseWithGemini(prompt);
+      via = 'gemini';
+    } catch (error) {
+      console.error('[RocketReach] Gemini parse failed, using basic parser:', error.response?.status || error.message, JSON.stringify(error.response?.data || '').slice(0, 300));
+    }
+  }
+  if (!raw && (process.env.ANTHROPIC_API_KEY || '').trim()) {
     try {
       raw = await parseWithClaude(prompt);
       via = 'claude';
@@ -145,7 +183,8 @@ function sizeBuckets(min) {
 // Build the RocketReach /person/search query. Names follow RocketReach's docs; verify on your first real call.
 function buildRrQuery(c) {
   const q = {};
-  if (c.job_titles.length) q.current_title = c.job_titles;
+    const titles = c.job_titles.flatMap((t) => t.split(/,| and | or /i)).map((t) => t.trim()).filter(Boolean);
+  if (titles.length) q.current_title = titles;
   if (c.seniority.length) q.management_levels = c.seniority;
   if (c.departments.length) q.department = c.departments;
   if (c.locations.length) q.location = c.locations;
@@ -174,18 +213,31 @@ function mockPeople(c) {
   }));
 }
 
-function bestEmail(p) {
-  if (p.recommended_email) return clean(p.recommended_email);
-  if (p.current_work_email) return clean(p.current_work_email);
+function allEmails(p) {
+  const out = [];
+  const add = (v) => { const s = clean(v).toLowerCase(); if (s && !out.includes(s)) out.push(s); };
+  add(p.recommended_email);
+  add(p.current_work_email);
+  add(p.current_personal_email);
+  (Array.isArray(p.emails) ? p.emails : []).forEach((e) => add(typeof e === 'string' ? e : e && e.email));
+  return out;
+}
+function allPhones(p) {
+  const out = [];
+  const add = (v) => { const s = clean(v); if (s && !out.includes(s)) out.push(s); };
+  (Array.isArray(p.phones) ? p.phones : [])
+    .slice()
+    .sort((a, b) => (/mobile/i.test(b && b.type || '') ? 1 : 0) - (/mobile/i.test(a && a.type || '') ? 1 : 0))
+    .forEach((x) => add(typeof x === 'string' ? x : x && x.number));
+  add(p.phone);
+  return out;
+}
+const bestEmail = (p) => {
   const l = Array.isArray(p.emails) ? p.emails : [];
-  const valid = l.find((e) => e && (e.smtp_valid === 'valid' || e.grade === 'A' || e.grade === 'A-'));
-  return clean((valid || l[0] || {}).email);
-}
-function bestPhone(p) {
-  const l = Array.isArray(p.phones) ? p.phones : [];
-  const mobile = l.find((x) => x && /mobile/i.test(x.type || ''));
-  return clean((mobile || l[0] || {}).number);
-}
+  const valid = l.find((e) => e && typeof e === 'object' && (e.smtp_valid === 'valid' || e.grade === 'A' || e.grade === 'A-'));
+  return clean(p.recommended_email) || clean(p.current_work_email) || clean(valid && valid.email) || allEmails(p)[0] || '';
+};
+const bestPhone = (p) => allPhones(p)[0] || '';   // mobile numbers are sorted first
 function mapProfile(p) {
   return {
     id: String(p.id),
@@ -200,17 +252,51 @@ function mapProfile(p) {
   };
 }
 
-// POST /api/rocketreach/search   body: { criteria }
+// POST /api/rocketreach/search   body: { criteria, exclude_ids?, start? }
+// Skips people already used (exclude_ids), people already in the Leads table, and duplicates inside the batch.
+// If a page has too many repeats it reads the next page, up to 5 pages, so you still get new people.
+const normUrl = (u) => clean(u).toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '');
+
 async function searchPeople(req, res) {
   const c = normalizeCriteria(req.body?.criteria || req.body);
   const hasFilter = c.job_titles.length || c.seniority.length || c.departments.length || c.locations.length
     || c.industries.length || c.company_names.length || c.min_employees || c.keywords;
   if (!hasFilter) return res.status(400).json({ error: 'No filters found. Describe who you are looking for.' });
-  if (isMock()) return res.json({ mock: true, results: mockPeople(c) });
+  if (isMock()) return res.json({ mock: true, results: mockPeople(c), next_start: 0, skipped: { seen: 0, in_leads: 0 } });
+
+  const exclude = new Set((Array.isArray(req.body?.exclude_ids) ? req.body.exclude_ids : []).map(String));
+  let start = Math.max(Number(req.body?.start) || 1, 1);
+  const out = [];
+  const batchIds = new Set();
+  let skippedSeen = 0;
+  let skippedLeads = 0;
+  let exhausted = false;
+
   try {
-    const { data } = await rr().post('/person/search', { query: buildRrQuery(c), start: 1, page_size: c.limit });
-    const profiles = Array.isArray(data.profiles) ? data.profiles : [];
-    return res.json({ mock: false, results: profiles.map(mapProfile) });
+    // what the Leads table already has (a few thousand rows, cheap)
+    const existing = await prisma.leads.findMany({ select: { linkedin_url: true, email: true } });
+    const haveUrl = new Set(existing.map((l) => normUrl(l.linkedin_url)).filter(Boolean));
+    const haveEmail = new Set(existing.map((l) => clean(l.email).toLowerCase()).filter(Boolean));
+
+    for (let page = 0; page < 5 && out.length < c.limit && !exhausted; page += 1) {
+      const { data } = await rr().post('/person/search', { query: buildRrQuery(c), start, page_size: c.limit });
+      const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+      if (!profiles.length) { exhausted = true; break; }
+      start += profiles.length;
+      if (profiles.length < c.limit) exhausted = true;
+
+      for (const p of profiles.map(mapProfile)) {
+        if (out.length >= c.limit) break;
+        if (exclude.has(p.id) || batchIds.has(p.id)) { skippedSeen += 1; continue; }
+        const url = normUrl(p.linkedin_url);
+        const mail = clean(p.email).toLowerCase();
+        if ((url && haveUrl.has(url)) || (mail && haveEmail.has(mail))) { skippedLeads += 1; continue; }
+        batchIds.add(p.id);
+        out.push(p);
+      }
+    }
+    console.log('[RocketReach] search returned', out.length, 'new profiles; skipped seen:', skippedSeen, 'in leads:', skippedLeads, 'next start:', exhausted ? 0 : start);
+    return res.json({ mock: false, results: out, next_start: exhausted ? 0 : start, skipped: { seen: skippedSeen, in_leads: skippedLeads } });
   } catch (error) {
     const status = error.response?.status;
     const apiMessage = clean(error.response?.data?.detail || error.response?.data?.message || error.response?.data?.error);
@@ -225,7 +311,6 @@ async function searchPeople(req, res) {
     });
   }
 }
-
 // ---------------------------------------------------------------------------
 // 3) REVEAL (spends credits) and 4) EXPORT
 // ---------------------------------------------------------------------------
@@ -242,17 +327,21 @@ async function revealContacts(req, res) {
     });
   }
   const out = [];
-  for (const id of ids) {
+    for (const id of ids) {
     try {
       let { data } = await rr().get('/person/lookup', { params: { id } });
-      for (let i = 0; i < 5 && data && data.status && data.status !== 'complete'; i += 1) {
-        await new Promise((r) => setTimeout(r, 1500));
+      for (let i = 0; i < 10 && data && data.status && data.status !== 'complete'; i += 1) {
+        await new Promise((r) => setTimeout(r, 2000));
         const poll = await rr().get('/person/checkStatus', { params: { ids: id } });
         data = Array.isArray(poll.data) ? poll.data[0] : poll.data;
       }
-      out.push({ id, email: bestEmail(data || {}), phone: bestPhone(data || {}), revealed: true });
+      const email = bestEmail(data || {});
+      const phone = bestPhone(data || {});
+      console.log('[RocketReach] reveal', id, 'status:', data && data.status, 'emails:', (data && data.emails || []).length, 'phones:', (data && data.phones || []).length);
+      if (!email && !phone) console.warn('[RocketReach] lookup returned no contact for', id, 'status:', data && data.status);
+      out.push({ id, email, phone, revealed: Boolean(email || phone), error: email || phone ? undefined : 'No contact found' });
     } catch (error) {
-      console.error('[RocketReach] lookup failed for', id, error.response?.status || error.message);
+      console.error('[RocketReach] lookup failed for', id, error.response?.status, JSON.stringify(error.response?.data || error.message));
       out.push({ id, email: '', phone: '', revealed: false, error: 'Lookup failed' });
     }
   }

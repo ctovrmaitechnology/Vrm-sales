@@ -9,7 +9,7 @@
   width: 100%;
   text-align: left;
   line-height: 1.5;
-  color: #0f172a;
+  color: var(--text-strong);
 }
 
 .calls-page *,
@@ -18,7 +18,7 @@
   box-sizing: border-box;
   border-width: 0;
   border-style: solid;
-  border-color: #e5e7eb;
+  border-color: var(--border);
 }
 
 /* undo global.css element styles inside this page */

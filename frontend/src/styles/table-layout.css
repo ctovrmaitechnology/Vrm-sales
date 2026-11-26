@@ -1,0 +1,82 @@
+/* ==========================================================================
+   SHARED TABLE LAYOUT (all pages that use .wa-cards-table)
+   - the table scrolls inside its own box (vertical + horizontal)
+   - header row stays visible
+   - pagination bar stays pinned to the bottom of the screen
+   - opt-in sticky columns:  add a class to <table className="wa-cards-table ...">
+       sticky-first   -> first column sticky (Name / Company / Contact)
+       sticky-lead3   -> checkbox + S.NO + Name sticky (Leads page)
+   ========================================================================== */
+
+.wa-table-container-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.wa-cards-table-container {
+  max-height: calc(100vh - 520px);
+  min-height: 260px;
+  overflow: auto;
+}
+
+.wa-cards-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface-sunken);
+}
+
+/* pagination bar pinned to bottom of the screen while the table is in view */
+.wa-table-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  background: var(--surface-sunken);
+  border-top: 1px solid var(--border-soft);
+  border-radius: 0 0 16px 16px;
+}
+
+/* ---- sticky first column (opt-in) ---- */
+.wa-cards-table.sticky-first th:nth-child(1),
+.wa-cards-table.sticky-first td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
+}
+.wa-cards-table.sticky-first thead th:nth-child(1) { z-index: 4; }
+.wa-cards-table.sticky-first tbody td:nth-child(1) { background-color: var(--surface); }
+.wa-cards-table.sticky-first tbody tr.wa-row-selected td:nth-child(1) { background-color: var(--surface-selected); }
+
+/* ---- Leads page: checkbox (1) + S.NO (2) + Name (3) sticky ---- */
+.wa-cards-table.sticky-lead3 th:nth-child(1),
+.wa-cards-table.sticky-lead3 td:nth-child(1) { width: 36px;  min-width: 36px;  max-width: 36px;  position: sticky; left: 0;    z-index: 2; }
+.wa-cards-table.sticky-lead3 th:nth-child(2),
+.wa-cards-table.sticky-lead3 td:nth-child(2) { width: 52px;  min-width: 52px;  max-width: 52px;  position: sticky; left: 36px; z-index: 2; }
+.wa-cards-table.sticky-lead3 th:nth-child(3),
+.wa-cards-table.sticky-lead3 td:nth-child(3) { width: 180px; min-width: 180px; max-width: 180px; position: sticky; left: 88px; z-index: 2; }
+.wa-cards-table.sticky-lead3 thead th:nth-child(-n+3) { z-index: 4; }
+.wa-cards-table.sticky-lead3 tbody td:nth-child(-n+3) { background-color: var(--surface); }
+.wa-cards-table.sticky-lead3 tbody tr.wa-row-selected td:nth-child(-n+3) { background-color: var(--surface-selected); }
+
+/* ===== Users page table ===== */
+.users-table-box {
+  max-height: calc(100vh - 480px);
+  min-height: 260px;
+  overflow: auto;
+}
+.users-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface-sunken);
+}
+/* S.NO (1) + Member (2) sticky */
+.users-table th:nth-child(1),
+.users-table td:nth-child(1) { width: 56px; min-width: 56px; max-width: 56px; text-align: center; position: sticky; left: 0; z-index: 2; }
+.users-table th:nth-child(2),
+.users-table td:nth-child(2) { width: 240px; min-width: 240px; max-width: 240px; position: sticky; left: 56px; z-index: 2; }
+.users-table thead th:nth-child(-n+2) { z-index: 4; }
+.users-table tbody td:nth-child(-n+2) { background-color: var(--surface); }

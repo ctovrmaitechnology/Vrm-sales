@@ -7,6 +7,7 @@ const { getLeadByEmail, upsertUnifiedLead, updateLeadFields, updateUnifiedLeadSt
 const { getScopeUserIds, inScope } = require('../middleware/auth');
 const { cleanFollowUpNote } = require('../services/geminiService');
 const { findProductColumn, normalizeLeadProduct } = require('../utils/helpers');
+const { phoneError, hasContact, CONTACT_REQUIRED_MESSAGE } = require('../utils/contactValidation');
 const { getPendingWhatsAppReplyFollowUps, getWhatsAppReplyMessageStatuses } = require('../services/whatsappReplyFollowUpService');
 const {
   sendTemplate,
@@ -142,6 +143,18 @@ async function importManualLeads(req, res) {
       }
       if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
         errors.push({ row: index + 2, name: full_name, error: 'Email is invalid.' });
+        writeImportProgress(res, ++processed, rows.length);
+        continue;
+      }
+            const importPhoneErr = phoneError(values.phone_number, 'Phone number') ||
+        phoneError(values.whatsapp_number, 'WhatsApp number');
+      if (importPhoneErr) {
+        errors.push({ row: index + 2, name: full_name, error: importPhoneErr });
+        writeImportProgress(res, ++processed, rows.length);
+        continue;
+      }
+      if (!hasContact(values.email, values.phone_number, values.whatsapp_number)) {
+        errors.push({ row: index + 2, name: full_name, error: CONTACT_REQUIRED_MESSAGE });
         writeImportProgress(res, ++processed, rows.length);
         continue;
       }
@@ -288,7 +301,11 @@ async function createManualLeadController(req, res) {
     ? body.email_status.trim().toLowerCase() || 'not sent'
     : 'not sent';
 
-  if (Object.values(lead).includes(undefined)) {
+  if (textFields.some((field) =>
+  body[field] !== undefined &&
+  body[field] !== null &&
+  typeof body[field] !== 'string'
+)) {
     return res.status(400).json({ error: "Lead fields must contain valid text values." });
   }
   if (userId !== null && (!Number.isInteger(userId) || userId < 1)) {
@@ -299,6 +316,13 @@ async function createManualLeadController(req, res) {
   }
   if (lead.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email)) {
     return res.status(400).json({ error: "Enter a valid email address." });
+  }
+  {
+    const pErr = phoneError(lead.phone_number, 'Phone number') || phoneError(lead.whatsapp_number, 'WhatsApp number');
+    if (pErr) return res.status(400).json({ error: pErr });
+    if (!hasContact(lead.email, lead.phone_number, lead.whatsapp_number)) {
+      return res.status(400).json({ error: CONTACT_REQUIRED_MESSAGE });
+    }
   }
   if (textFields.some((field) => lead[field] &&
       lead[field].length > (field === 'note' || field === 'address' ? 2000 : 255)) ||
@@ -582,6 +606,13 @@ async function deleteLead(req, res) {
   const identifier = req.body.identifier;
 
   try {
+    // only the lead's owner (or the super admin) can delete a single lead
+    if (req.user.role !== 'super_admin') {
+      const existing = await getUnifiedLeadByIdentifier(identifier);
+      if (existing && existing.user_id !== req.user.id) {
+        return res.status(403).json({ error: 'Only the lead owner can delete this lead.' });
+      }
+    }
     const deleted = await deleteUnifiedLead(identifier);
 
     if (!deleted) {
@@ -940,12 +971,15 @@ async function updateManualLeadController(req, res) {
     'company_name', 'phone_number', 'role', 'source', 'status', 'note', 'address'
   ];
   const lead = Object.fromEntries(textFields.map((field) => [
-    field,
-    body[field] === undefined || body[field] === null
+  field,
+  body[field] === undefined
+    ? undefined
+    : body[field] === null
       ? null
-      : typeof body[field] === 'string' ? body[field].trim() || null : undefined
-  ]));
-
+      : typeof body[field] === 'string'
+        ? body[field].trim() || null
+        : undefined
+]));
   if (body.email !== undefined && body.email !== null && typeof body.email !== 'string') {
     return res.status(400).json({ error: 'Email must be text.' });
   }
@@ -957,7 +991,11 @@ async function updateManualLeadController(req, res) {
     return res.status(400).json({ error: 'Full name cannot be empty.' });
   }
 
-  if (Object.values(lead).includes(undefined)) {
+  if (textFields.some((field) =>
+  body[field] !== undefined &&
+  body[field] !== null &&
+  typeof body[field] !== 'string'
+)) {
     return res.status(400).json({ error: 'Lead fields must contain valid text values.' });
   }
   if (userId !== null && (!Number.isInteger(userId) || userId < 1)) {
@@ -965,6 +1003,10 @@ async function updateManualLeadController(req, res) {
   }
   if (lead.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email)) {
     return res.status(400).json({ error: 'Enter a valid email address.' });
+  }
+  {
+    const pErr = phoneError(lead.phone_number, 'Phone number') || phoneError(lead.whatsapp_number, 'WhatsApp number');
+    if (pErr) return res.status(400).json({ error: pErr });
   }
   if (textFields.some((field) => lead[field] &&
       lead[field].length > (field === 'note' || field === 'address' ? 2000 : 255)) ||
@@ -1006,6 +1048,17 @@ async function deleteManualLeadController(req, res) {
   try {
     const lead = await prisma.leads.findUnique({ where: { id } });
     if (!lead) return res.status(404).json({ error: 'Lead not found.' });
+
+    // only the lead's owner (or the super admin) can delete a single lead
+    // Any member of the lead owner's team can delete the lead.
+// Super Admin and Admin retain their existing wider access.
+const scope = await getScopeUserIds(req.user);
+
+if (!inScope(scope, lead.user_id)) {
+  return res.status(403).json({
+    error: 'You can only delete leads belonging to yourself or your team.'
+  });
+}
 
     await prisma.lead_status.deleteMany({ where: { lead_id: id } }).catch(() => {});
     await prisma.automation_logs.deleteMany({ where: { lead_id: id } }).catch(() => {});
@@ -1066,10 +1119,16 @@ async function deleteManualLeadController(req, res) {
   }
 }
 async function bulkDeleteManualLeads(req, res) {
-  const ids = [...new Set((req.body?.ids || []).map(Number))].filter((n) => Number.isInteger(n) && n > 0);
-  if (!ids.length) return res.status(400).json({ error: 'No lead IDs provided.' });
+  
+  if (req.user?.role !== 'super_admin') {
+    return res.status(403).json({
+      error: 'Only Super Admin can bulk delete leads.'
+    });
+  }
 
-  try {
+  const ids = [...new Set((req.body?.ids || []).map(Number))]
+    .filter((n) => Number.isInteger(n) && n > 0);
+try {
     const leads = await prisma.leads.findMany({
       where: { id: { in: ids } },
       select: { id: true, email: true },

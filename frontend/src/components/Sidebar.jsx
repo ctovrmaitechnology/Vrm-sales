@@ -13,8 +13,7 @@ import {
   Search, 
   ShieldCheck, 
   ChevronDown,
-  PanelLeftClose,
-  PanelLeftOpen,
+  
   LogOut,
   Moon,
   Sun,
@@ -78,15 +77,7 @@ const Sidebar = ({ collapsed = false, onToggle }) => {
               }}
             />
           </div>
-                    <button
-            type="button"
-            className="sidebar-toggle"
-            onClick={onToggle}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-                      </button>
+                  
                     <div className="sidebar-brand-text" style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.15 }}>
               VRM
